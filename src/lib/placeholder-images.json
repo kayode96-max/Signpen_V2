@@ -1,0 +1,22 @@
+{
+  "placeholderImages": [
+    {
+      "id": "feature-canvas",
+      "description": "An image representing an interactive, zoomable canvas with digital signatures.",
+      "imageUrl": "https://images.unsplash.com/photo-1605764947248-96f932048c8e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxpbnRlcmFjdGl2ZSUyMGNhbnZhc3xlbnwwfHx8fDE3NjQ3OTQzMDF8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "interactive canvas"
+    },
+    {
+      "id": "feature-creative",
+      "description": "An image showing creative tools like different pens, colors, and fonts for signing.",
+      "imageUrl": "https://images.unsplash.com/photo-1760270049613-4b670a965673?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxjcmVhdGl2ZSUyMHRvb2xzfGVufDB8fHx8MTc2NDc5NDMwMHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "creative tools"
+    },
+    {
+      "id": "feature-download",
+      "description": "An image depicting a high-resolution export of a signature board, perhaps as a book or PDF.",
+      "imageUrl": "https://images.unsplash.com/photo-1620046311691-5d93d65f69e9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxkaWdpdGFsJTIwa2VlcHNha2V8ZW58MHx8fHwxNzY0Nzk0MzAwfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "digital keepsake"
+    }
+  ]
+}
