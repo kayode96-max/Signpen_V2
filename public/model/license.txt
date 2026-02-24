@@ -1,0 +1,11 @@
+Model Information:
+* title:	Tshirt
+* source:	https://sketchfab.com/3d-models/tshirt-a88d6e25d67c4b0c91b9ea013e679870
+* author:	khalilchahi99 (https://sketchfab.com/khalilchahi99)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Tshirt" (https://sketchfab.com/3d-models/tshirt-a88d6e25d67c4b0c91b9ea013e679870) by khalilchahi99 (https://sketchfab.com/khalilchahi99) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
