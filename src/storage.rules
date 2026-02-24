@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper function to check ownership
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rules for profile photos
+    match /profile-photos/{userId}/{allPaths=**} {
+      // Only the authenticated owner can upload/update their own profile photo.
+      allow write: if isOwner(userId);
+      
+      // Anyone can read profile photos.
+      allow read: if true;
+    }
+
+    // Rules for background images
+    match /background-images/{userId}/{allPaths=**} {
+      // Only the authenticated owner can upload/update their own background image.
+      allow write: if isOwner(userId);
+
+      // Anyone can read background images.
+      allow read: if true;
+    }
+  }
+}
