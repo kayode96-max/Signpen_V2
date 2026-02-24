@@ -1,0 +1,219 @@
+{
+  "entities": {
+    "Student": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Student",
+      "type": "object",
+      "description": "Represents a graduating student using the SignOff application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the student entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The full name of the student."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the student.",
+          "format": "email"
+        },
+        "profilePhoto": {
+          "type": "string",
+          "description": "URL to the student's profile photo.",
+          "format": "uri"
+        },
+        "themeSettings": {
+          "type": "string",
+          "description": "JSON string representing the theme settings for the student's sign-out page."
+        },
+        "popupMessageConfig": {
+          "type": "string",
+          "description": "JSON string representing the configuration for the student's thank-you pop-up message."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the student account was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "createdAt"
+      ]
+    },
+    "Signature": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Signature",
+      "type": "object",
+      "description": "Represents a single digital signature on a student's sign-out page.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the signature entity."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Reference to the Student entity. (Relationship: Student 1:N Signature)"
+        },
+        "signatureURL": {
+          "type": "string",
+          "description": "URL to the image of the digital signature.",
+          "format": "uri"
+        },
+        "signatoryName": {
+          "type": "string",
+          "description": "Name of the person who signed the board."
+        },
+        "signatoryNote": {
+          "type": "string",
+          "description": "Optional note or message left by the signatory."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp indicating when the signature was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "studentId",
+        "signatureURL",
+        "timestamp"
+      ]
+    },
+    "ThankYouCard": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ThankYouCard",
+      "type": "object",
+      "description": "Represents a thank you card generated for a specific signature.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the thank you card entity."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Reference to the Student entity. (Relationship: Student 1:N ThankYouCard)"
+        },
+        "signatureId": {
+          "type": "string",
+          "description": "Reference to the Signature entity. (Relationship: Signature 1:1 ThankYouCard)"
+        },
+        "cardDesignData": {
+          "type": "string",
+          "description": "JSON string representing the design data for the thank you card (background, stickers, message, etc.)."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp indicating when the thank you card was generated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "studentId",
+        "signatureId",
+        "cardDesignData",
+        "timestamp"
+      ]
+    },
+    "SignatureCooldown": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SignatureCooldown",
+      "type": "object",
+      "description": "Tracks the last signature time for an IP address to prevent spam.",
+      "properties": {
+        "signedAt": {
+          "type": "string",
+          "description": "Timestamp of the last signature from this IP.",
+          "format": "date-time"
+        }
+      },
+      "required": ["signedAt"]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous",
+      "google.com"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/students/{studentId}",
+        "definition": {
+          "entityName": "Student",
+          "schema": {
+            "$ref": "#/backend/entities/Student"
+          },
+          "description": "Collection of student profiles. Each document contains student details. The 'studentId' is used for path-based ownership.",
+          "params": [
+            {
+              "name": "studentId",
+              "description": "The unique identifier for the student."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/students/{studentId}/signatures/{signatureId}",
+        "definition": {
+          "entityName": "Signature",
+          "schema": {
+            "$ref": "#/backend/entities/Signature"
+          },
+          "description": "Subcollection of signatures associated with a student. Includes the studentId to ensure authorization independence.",
+          "params": [
+            {
+              "name": "studentId",
+              "description": "The unique identifier for the student who owns the signature."
+            },
+            {
+              "name": "signatureId",
+              "description": "The unique identifier for the signature."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/students/{studentId}/thankYouCards/{thankYouCardId}",
+        "definition": {
+          "entityName": "ThankYouCard",
+          "schema": {
+            "$ref": "#/backend/entities/ThankYouCard"
+          },
+          "description": "Subcollection of thank you cards associated with a student. Includes the studentId to ensure authorization independence.",
+          "params": [
+            {
+              "name": "studentId",
+              "description": "The unique identifier for the student who owns the thank you card."
+            },
+            {
+              "name": "thankYouCardId",
+              "description": "The unique identifier for the thank you card."
+            }
+          ]
+        }
+      },
+       {
+        "path": "/students/{studentId}/signedIps/{ipAddress}",
+        "definition": {
+          "entityName": "SignatureCooldown",
+          "schema": { "$ref": "#/backend/entities/SignatureCooldown" },
+          "description": "Tracks IP addresses that have signed for a student to prevent spam.",
+          "params": [
+            { "name": "studentId", "description": "The student's unique ID." },
+            { "name": "ipAddress", "description": "The signatory's IP address." }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to provide a secure and scalable solution for the SignOff application. It focuses on authorization independence, clarity, and predictable data structures. User authentication is handled via Firebase Authentication, supporting username/password and Google sign-in. Data is structured to ensure that security rules can be written clearly and efficiently, without relying on complex hierarchical `get()` calls.\n\n**Authorization Independence:** The design incorporates denormalization to ensure authorization independence.  Specifically, the `studentId` is present on both `Signature` and `ThankYouCard` documents. This allows direct access to these subcollections without needing to `get()` the parent `Student` document, which would break atomicity.\n\n**Structural Segregation:** The data is structurally segregated to maintain a homogeneous security posture. Each collection contains documents with the same security requirements.\n\n**Access Modeling:** Path-based ownership is used for the relationships between Students and their Signatures/ThankYouCards to simply security rules.\n\n**QAPs (Rules are not Filters):** The data structure supports secure `list` operations. Access control is enforced at the collection level. Path-based ownership (`/users/{userId}/...`) ensures that listing operations are always scoped to the current user's data, preventing unauthorized access.\n\n**Invariants:** The structure supports data integrity using server-side timestamping and consistent data modeling (e.g., standard naming conventions)."
+  }
+}
