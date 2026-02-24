@@ -1,0 +1,106 @@
+/**
+ * This ruleset enforces a security model centered around student ownership,
+ * with specific allowances for public interaction on a student's "sign-off" page.
+ *
+ * Core Philosophy:
+ * The primary security posture is that a student (authenticated user) has full
+ * control over their own data. This includes their profile, the signatures
+ * they receive, and the thank-you cards they create. Public, and even anonymous,
+ * users are granted limited, specific permissions to interact with a student's
+ * public-facing content.
+ *
+ * Data Structure:
+ * All data is organized hierarchically under the `/students/{studentId}` path.
+ * A student's profile is the root document, with their signatures and thank-you
+ * cards stored in respective subcollections. This structure allows for clear,
+ * path-based security rules.
+ *
+ * Key Security Decisions:
+ * - Publicly Readable Profiles: A student's main profile and the signatures
+ *   they've received are publicly readable to allow for a shareable "sign-off" page.
+ * - Public Signature Creation: Any user, including anonymous ones, can create
+ *   a signature on a student's page. This is essential for the core app functionality.
+ * - Owner-Only Moderation: Only the student who owns the page can update or
+ *   delete signatures left for them.
+ * - Private Thank-You Cards: Thank-you cards are considered private and are only
+ *   accessible by the student who created them.
+ * - No User Enumeration: Listing the entire `/students` collection is explicitly
+ *   disallowed to protect user privacy.
+ *
+ * Denormalization for Authorization:
+ * The `studentId` field is denormalized onto `Signature` and `ThankYouCard`
+ * documents. This is a critical design choice that allows security rules to
+* validate data integrity on creation without needing expensive `get()` calls to
+ * parent documents, resulting in faster and more secure rules.
+ *
+ * Structural Segregation:
+ * The separation of public-facing `signatures` and private `thankYouCards` into
+ * distinct subcollections allows for simple and robust security rules. This is
+ * more secure than using a single collection with a "isPublic" flag, especially
+ * for list operations.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for reusable logic
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Controls access to student data. Profiles and signatures are public to read.
+     * Creation and modification are restricted.
+     * @path /students/{studentId}
+     */
+    match /students/{studentId} {
+      // Allow anyone to read a student's profile (get) but not list all students.
+      allow get: if true;
+      allow list: if false;
+
+      // Only the authenticated owner can create, update, or delete their own profile.
+      allow write: if isOwner(studentId);
+
+      /**
+       * @description Public access to signatures for a given student.
+       * @path /students/{studentId}/signatures/{signatureId}
+       */
+      match /signatures/{signatureId} {
+        // Anyone can read signatures.
+        allow read: if true;
+
+        // Anyone can create a signature.
+        // The rule ensures the signature is for the correct student.
+        allow create: if request.resource.data.studentId == studentId;
+
+        // Only the student who owns the board can update or delete signatures.
+        allow update, delete: if isOwner(studentId);
+      }
+
+      /**
+       * @description Private access to thank you cards.
+       * @path /students/{studentId}/thankYouCards/{thankYouCardId}
+       */
+      match /thankYouCards/{thankYouCardId} {
+        // Only the owner can read or write their own thank you cards.
+        allow read, write: if isOwner(studentId);
+      }
+       /**
+       * @description IP-based spam protection.
+       * @path /students/{studentId}/signedIps/{ipAddress}
+       */
+      match /signedIps/{ipAddress} {
+        // Allow anyone to check if an IP has signed.
+        allow get: if true;
+        // Allow anyone to mark an IP as having signed.
+        allow create, update: if true;
+        // Disallow listing all IPs or deleting records.
+        allow list, delete: if false;
+      }
+    }
+  }
+}
