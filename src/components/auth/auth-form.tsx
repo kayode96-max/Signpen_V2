@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useFirebase } from "@/firebase/provider";
+import { getErrorDisplay } from "@/lib/error-display";
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
@@ -63,10 +64,14 @@ export default function AuthForm() {
       });
       router.push("/dashboard");
     } catch (error: any) {
+      const display = getErrorDisplay(error, {
+        title: "Login failed",
+        description: "We couldn't sign you in. Please try again.",
+      });
       toast({
         variant: "destructive",
-        title: "Login Failed",
-        description: error.message,
+        title: display.title,
+        description: display.description,
       });
     } finally {
       setIsLoading(false);
@@ -85,10 +90,14 @@ export default function AuthForm() {
       });
       router.push("/dashboard");
     } catch (error: any) {
+      const display = getErrorDisplay(error, {
+        title: "Sign up failed",
+        description: "We couldn't create your account right now.",
+      });
       toast({
         variant: "destructive",
-        title: "Sign Up Failed",
-        description: error.message,
+        title: display.title,
+        description: display.description,
       });
     } finally {
       setIsLoading(false);
@@ -106,10 +115,14 @@ export default function AuthForm() {
       });
       router.push("/dashboard");
     } catch (error: any) {
+      const display = getErrorDisplay(error, {
+        title: "Google sign-in failed",
+        description: "We couldn't complete Google sign-in right now.",
+      });
       toast({
         variant: "destructive",
-        title: "Google Sign-In Failed",
-        description: error.message,
+        title: display.title,
+        description: display.description,
       });
     } finally {
       setIsLoading(false);

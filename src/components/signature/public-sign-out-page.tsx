@@ -21,6 +21,7 @@ import InstructionDialog from "./instruction-dialog";
 import dynamic from "next/dynamic";
 import type { ExistingSignature } from "@/components/3d/TShirtCanvas";
 import type { SignaturePlacementPayload } from "@/components/3d/TShirtSigningModal";
+import { getErrorDisplay } from "@/lib/error-display";
 
 const TShirtSigningModal = dynamic(
   () => import("@/components/3d/TShirtSigningModal"),
@@ -141,7 +142,11 @@ export default function PublicSignOutPage() {
       setShowModal(false);
       setShowThankYou(true);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Submission Failed", description: err.message || "An unexpected error occurred." });
+      const display = getErrorDisplay(err, {
+        title: "Submission failed",
+        description: "We couldn't save your signature right now. Please try again.",
+      });
+      toast({ variant: "destructive", title: display.title, description: display.description });
     } finally {
       setIsSubmitting(false);
     }
@@ -171,7 +176,7 @@ export default function PublicSignOutPage() {
 
       {student.pageSettings.backgroundImageUrl && (
         <div className="absolute inset-0 z-0 opacity-20">
-          <img src={student.pageSettings.backgroundImageUrl} alt="background" className="w-full h-full object-cover" />
+          <img src={student.pageSettings.backgroundImageUrl} alt="" className="w-full h-full object-cover" />
         </div>
       )}
 
@@ -180,7 +185,7 @@ export default function PublicSignOutPage() {
         {/* Header */}
         <div className="text-center mb-6">
           <Avatar className="w-24 h-24 mb-4 border-4 border-background shadow-md mx-auto">
-            <AvatarImage src={student.profilePhotoUrl} />
+            <AvatarImage src={student.profilePhotoUrl || undefined} alt={student.name} />
             <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
           </Avatar>
           <h2 className="text-4xl font-bold font-headline">{student.pageSettings.pageHeading}</h2>

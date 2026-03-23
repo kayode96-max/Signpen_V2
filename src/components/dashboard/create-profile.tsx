@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -28,8 +27,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
-import type { Student } from '@/lib/types';
 import { useRouter } from 'next/navigation';
+import { createDefaultStudentProfile } from '@/lib/student-page';
 
 const profileSchema = z.object({
   name: z.string().min(2, { message: 'Please enter your full name.' }),
@@ -51,23 +50,12 @@ export default function CreateProfile({ user }: { user: User }) {
   const onSubmit = async (values: z.infer<typeof profileSchema>) => {
     setIsLoading(true);
 
-    const newStudent: Student = {
+    const newStudent = createDefaultStudentProfile({
       id: user.uid,
       name: values.name,
       email: user.email || '',
       profilePhotoUrl: user.photoURL || '',
-      pageSettings: {
-        theme: 'light',
-        pageHeading: `${values.name}'s Sign-Off`,
-        pageSubheading: `Sign My Final Year Board 🎓✨`,
-        backgroundImageUrl: '',
-      },
-      popupMessageConfig: {
-        title: 'Thank You So Much ❤️',
-        message:
-          'Your message means the world to me. Thank you for being a part of my journey!',
-      },
-    };
+    });
 
     const studentDocRef = doc(firestore, 'students', user.uid);
     setDocumentNonBlocking(studentDocRef, newStudent, { merge: false });
@@ -77,18 +65,15 @@ export default function CreateProfile({ user }: { user: User }) {
       description: 'Your sign-out page is ready. Welcome to SignPen!',
     });
 
-    // No need to set isloading to false, we are navigating away
-    // We don't wait for the doc to be written, onSnapshot will pick it up
-    // The dashboard will re-render automatically.
+    // No need to set isLoading to false because the dashboard listener takes over.
+    router.refresh();
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen p-4 bg-secondary">
+    <div className="flex min-h-screen items-center justify-center bg-secondary p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <CardTitle className="text-2xl font-headline">
-            Create Your Profile
-          </CardTitle>
+          <CardTitle className="text-2xl font-headline">Create Your Profile</CardTitle>
           <CardDescription>
             Just one more step to get your personalized sign-out page ready.
           </CardDescription>
@@ -114,13 +99,11 @@ export default function CreateProfile({ user }: { user: User }) {
                 )}
               />
               <div className="space-y-2">
-                  <FormLabel>Email</FormLabel>
-                  <Input value={user.email || 'No email provided'} disabled />
+                <FormLabel>Email</FormLabel>
+                <Input value={user.email || 'No email provided'} disabled />
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {isLoading ? 'Creating Profile...' : 'Create My Page'}
               </Button>
             </form>

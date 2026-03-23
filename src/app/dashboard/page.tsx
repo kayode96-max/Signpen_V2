@@ -30,6 +30,7 @@ import { motion } from "framer-motion";
 import dynamic from 'next/dynamic';
 import type { TShirtBoardRef } from '@/components/3d/TShirtBoard';
 import type { ExistingSignature } from '@/components/3d/TShirtCanvas';
+import { getErrorDisplay } from '@/lib/error-display';
 
 const TShirtBoard = dynamic(() => import('@/components/3d/TShirtBoard'), {
   ssr: false,
@@ -147,7 +148,11 @@ export default function DashboardPage() {
       toast({ title: 'PDF Downloaded!', description: 'Your complete signature board has been saved.' });
     } catch (err) {
       console.error(err);
-      toast({ variant: 'destructive', title: 'PDF Download Failed', description: 'Something went wrong.' });
+      const display = getErrorDisplay(err, {
+        title: 'PDF download failed',
+        description: "We couldn't generate your PDF right now.",
+      });
+      toast({ variant: 'destructive', title: display.title, description: display.description });
     } finally {
       setIsDownloading(false);
     }

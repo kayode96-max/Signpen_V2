@@ -7,12 +7,28 @@ import { initializeFirebase } from './index';
 const { firebaseApp } = initializeFirebase();
 const storage = getStorage(firebaseApp);
 
+function sanitizeFileName(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function buildUploadFileName(file: File) {
+  const sanitizedName = sanitizeFileName(file.name || 'image');
+  const dotIndex = sanitizedName.lastIndexOf('.');
+  const hasExtension = dotIndex > 0 && dotIndex < sanitizedName.length - 1;
+  const baseName = hasExtension ? sanitizedName.slice(0, dotIndex) : sanitizedName || 'image';
+  const extension = hasExtension ? sanitizedName.slice(dotIndex + 1) : 'jpg';
+
+  return `${baseName}-${Date.now()}.${extension}`;
+}
+
 /**
  * Uploads an image to Firebase Storage and returns the download URL.
- * @param userId - The ID of the user uploading the file.
- * @param file - The file to upload.
- * @param path - The base path for the upload (e.g., 'profile-photos').
- * @returns The public URL of the uploaded image.
+ * Files are stored with a unique name so replacing an image does not get stuck behind browser caching.
  */
 export async function uploadImageAndGetURL(
   userId: string,
@@ -23,14 +39,13 @@ export async function uploadImageAndGetURL(
     throw new Error('User must be authenticated to upload files.');
   }
 
-  const filePath = `${path}/${userId}/${file.name}`;
+  const filePath = `${path}/${userId}/${buildUploadFileName(file)}`;
   const storageRef = ref(storage, filePath);
 
-  // Upload file
-  const snapshot = await uploadBytes(storageRef, file);
+  const snapshot = await uploadBytes(storageRef, file, {
+    contentType: file.type || undefined,
+    cacheControl: 'public,max-age=3600',
+  });
 
-  // Get the download URL
-  const downloadURL = await getDownloadURL(snapshot.ref);
-
-  return downloadURL;
+  return getDownloadURL(snapshot.ref);
 }
