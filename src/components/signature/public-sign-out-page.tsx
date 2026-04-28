@@ -9,8 +9,8 @@ import ThankYouDialog from "./thank-you-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Info } from "lucide-react";
 import { useDoc, useCollection, initializeFirebase } from "@/firebase";
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates";
-import { collection, serverTimestamp, doc, query, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, query, getDoc } from "firebase/firestore";
+import { signInAnonymously } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
 import { notFound, useParams } from "next/navigation";
 import {
@@ -39,7 +39,7 @@ const TShirtBoard = dynamic(
   }
 );
 
-const { firestore } = initializeFirebase();
+const { firestore, auth } = initializeFirebase();
 
 export default function PublicSignOutPage() {
   const { toast } = useToast();
@@ -95,6 +95,14 @@ export default function PublicSignOutPage() {
   }, [studentId]);
 
   useEffect(() => {
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch((error) => {
+        console.warn("Anonymous sign-in failed:", error);
+      });
+    }
+  }, []);
+
+  useEffect(() => {
     if (student?.pageSettings.theme === "dark") {
       document.documentElement.classList.add("dark");
     } else {
@@ -121,27 +129,39 @@ export default function PublicSignOutPage() {
     if (!firestore || !student) return;
     setIsSubmitting(true);
     try {
-      const ipRes = await fetch("/api/ip");
-      const { ip } = await ipRes.json();
-      if (!ip) throw new Error("Could not verify your request.");
-      const ipDocRef = doc(firestore, `students/${student.id}/signedIps`, ip);
-      const newSig: Omit<Signature, "id"> = {
-        studentId: student.id,
-        signatureImageUrl: payload.signatureImageUrl,
-        signatoryName: sigName,
-        signatoryNote: sigNote,
-        position: payload.position,
-        timestamp: serverTimestamp() as any,
-      };
-      await addDocumentNonBlocking(collection(firestore, `students/${student.id}/signatures`), newSig);
-      await setDoc(ipDocRef, { signedAt: serverTimestamp() });
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        throw new Error("Could not verify your session.");
+      }
+
+      const response = await fetch("/api/signatures", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          studentId: student.id,
+          signatureImageUrl: payload.signatureImageUrl,
+          signatoryName: sigName,
+          signatoryNote: sigNote,
+          position: payload.position,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: "Submission failed." }));
+        throw new Error(payload.error || "Submission failed.");
+      }
+
       setSigName("");
       setSigNote("");
       setHasAlreadySigned(true);
       setShowModal(false);
       setShowThankYou(true);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Submission Failed", description: err.message || "An unexpected error occurred." });
+      const message = err?.message || "An unexpected error occurred.";
+      toast({ variant: "destructive", title: "Submission Failed", description: message });
     } finally {
       setIsSubmitting(false);
     }

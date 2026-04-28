@@ -2,7 +2,6 @@
 "use client";
 
 import { useState } from "react";
-import { summarizeSignatureSentiments } from "@/ai/flows/summarize-signature-sentiments";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Sparkles } from "lucide-react";
@@ -23,7 +22,17 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         return;
       }
       const messages = signatures.map(s => `${s.signatoryName}: "${s.signatoryNote}"`);
-      const result = await summarizeSignatureSentiments({ signatures: messages });
+      const response = await fetch("/api/sentiment-summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ signatures: messages }),
+      });
+      if (!response.ok) {
+        throw new Error("Sentiment request failed.");
+      }
+      const result: { sentimentSummary: string } = await response.json();
       setSummary(result.sentimentSummary);
     } catch (e) {
       console.error(e);
