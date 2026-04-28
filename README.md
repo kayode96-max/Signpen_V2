@@ -31,3 +31,30 @@ The optimized version merging **studio_signout** (full Firebase app) with **Sign
 ## Getting started
 
 cd signpen && npm install && npm run dev
+
+## Rust backend migration (parity mode)
+
+The Next.js backend endpoints are now proxy-capable and can delegate to a Rust service while preserving client contracts.
+
+### Implemented parity endpoints
+
+- `GET /api/ip` -> returns `{ "ip": string }`
+- `POST /api/sentiment-summary` -> accepts `{ "signatures": string[] }`, returns `{ "sentimentSummary": string }`
+- `POST /api/signatures` -> accepts a signature payload and writes to Firestore after Firebase token verification
+
+### Run the Rust backend
+
+1. `cd backend-rust`
+2. Set env vars:
+	- `GOOGLE_API_KEY` (required)
+	- `GEMINI_MODEL` (optional, defaults to `gemini-2.5-flash`)
+	- `FIREBASE_WEB_API_KEY` (required)
+	- `FIREBASE_PROJECT_ID` (required)
+	- `PORT` (optional, defaults to `8080`)
+3. Start service: `cargo run`
+
+### Connect Next.js to Rust backend
+
+Set `RUST_BACKEND_URL=http://127.0.0.1:8080` in your app environment and run Next.js as usual.
+
+`RUST_BACKEND_URL` is required. If Rust is unavailable, API routes return `502/503` so backend ownership remains fully on Rust.
