@@ -212,7 +212,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${alegreya.variable} ${inter.variable} ${caveat.variable} ${dancingScript.variable} ${pacifico.variable} ${indieFlower.variable} ${sourceCodePro.variable} ${greatVibes.variable} ${sacramento.variable} ${monsieurLaDoulaise.variable} ${unifrakturMaguntia.variable} ${alexBrush.variable} ${allura.variable} ${cookie.variable} ${kaushanScript.variable} ${marckScript.variable} ${satisfy.variable} ${yellowtail.variable} ${parisienne.variable} ${tangerine.variable} ${italianno.variable} ${nothingYouCouldDo.variable} ${cedarvilleCursive.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`bg-background ${alegreya.variable} ${inter.variable} ${caveat.variable} ${dancingScript.variable} ${pacifico.variable} ${indieFlower.variable} ${sourceCodePro.variable} ${greatVibes.variable} ${sacramento.variable} ${monsieurLaDoulaise.variable} ${unifrakturMaguntia.variable} ${alexBrush.variable} ${allura.variable} ${cookie.variable} ${kaushanScript.variable} ${marckScript.variable} ${satisfy.variable} ${yellowtail.variable} ${parisienne.variable} ${tangerine.variable} ${italianno.variable} ${nothingYouCouldDo.variable} ${cedarvilleCursive.variable}`}>
       <head>
           <link rel="icon" href="/images/signpen.png" type="image/png" />
 

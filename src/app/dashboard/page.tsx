@@ -175,64 +175,104 @@ export default function DashboardPage() {
 
   return (
     <motion.div 
-      className="p-4 sm:p-6 lg:p-8 space-y-8"
+      className="min-h-screen bg-background p-4 sm:p-6 lg:p-8"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
     >
+      {/* Header Section */}
       <motion.div 
-        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+        className="mb-8"
         variants={itemVariants}
       >
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight font-headline">
-            Dashboard
-          </h1>
-          <p className="text-muted-foreground">
-            Here's what's happening on your SignPen page.
-          </p>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+          <div>
+            <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-2">
+              <span className="font-pacifico text-5xl sm:text-6xl text-secondary block mb-1">Your</span>
+              <span className="font-headline">Dashboard</span>
+            </h1>
+            <p className="text-foreground/70 text-lg">
+              Manage your signature board and share memories with friends.
+            </p>
+          </div>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.98 }}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  disabled={isDownloading}
+                  className="bg-gradient-to-r from-primary to-secondary hover:shadow-lg text-white rounded-xl font-semibold transition-all duration-300 group"
+                >
+                  {isDownloading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4 group-hover:animate-bounce" />
+                  )}
+                  {isDownloading ? 'Downloading...' : 'Export'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuItem onClick={handleDownloadImage}>
+                  <ImageIcon className="mr-2 h-4 w-4 text-primary" />
+                  <span>Download as Image (PNG)</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadPdf}>
+                  <FileText className="mr-2 h-4 w-4 text-secondary" />
+                  <span>Download as PDF</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </motion.div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button disabled={isDownloading}>
-              {isDownloading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="mr-2 h-4 w-4" />
-              )}
-              {isDownloading ? 'Downloading...' : 'Download Board'}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={handleDownloadImage}>
-              <ImageIcon className="mr-2 h-4 w-4" />
-              <span>Download as Image (PNG)</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDownloadPdf}>
-              <FileText className="mr-2 h-4 w-4" />
-              <span>Download as Document (PDF)</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </motion.div>
 
+      {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        <motion.div className="lg:col-span-2 space-y-8" variants={itemVariants}>
-          <div className="w-full aspect-[4/3] rounded-lg border shadow-inner overflow-hidden bg-black">
-            <TShirtBoard
-              ref={boardRef}
-              existingSignatures={(signatures || []).map((s): ExistingSignature => ({
-                signatureImageUrl: s.signatureImageUrl,
-                position: s.position,
-              }))}
-              className="w-full h-full"
-            />
-          </div>
+        {/* Board Section */}
+        <motion.div className="lg:col-span-2 space-y-6" variants={itemVariants}>
+          <motion.div 
+            className="relative group"
+            whileHover={{ scale: 1.02 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className="absolute -inset-1 bg-gradient-to-r from-primary/50 via-secondary/50 to-accent/50 rounded-2xl opacity-20 group-hover:opacity-40 blur-xl transition-all duration-500"></div>
+            <div className="relative w-full aspect-[4/3] rounded-2xl border border-border/50 shadow-2xl overflow-hidden bg-black/50 backdrop-blur-sm">
+              <TShirtBoard
+                ref={boardRef}
+                existingSignatures={(signatures || []).map((s): ExistingSignature => ({
+                  signatureImageUrl: s.signatureImageUrl,
+                  position: s.position,
+                }))}
+                className="w-full h-full"
+              />
+            </div>
+          </motion.div>
         </motion.div>
 
-        <motion.div className="lg:col-span-1 space-y-8" variants={itemVariants}>
-          <ShareLink studentId={student.id} />
-          <SentimentSummary signatures={signatures || []} />
+        {/* Sidebar */}
+        <motion.div className="lg:col-span-1" variants={itemVariants}>
+          <div className="sticky top-8 space-y-6">
+            {/* Share Card */}
+            <motion.div 
+              className="group relative rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-border overflow-hidden"
+              whileHover={{ translateY: -4 }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="relative z-10">
+                <ShareLink studentId={student.id} />
+              </div>
+            </motion.div>
+
+            {/* Summary Card */}
+            <motion.div 
+              className="group relative rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-border overflow-hidden"
+              whileHover={{ translateY: -4 }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-secondary/10 via-transparent to-primary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              <div className="relative z-10">
+                <SentimentSummary signatures={signatures || []} />
+              </div>
+            </motion.div>
+          </div>
         </motion.div>
       </div>
     </motion.div>
