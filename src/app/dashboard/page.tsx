@@ -175,23 +175,23 @@ export default function DashboardPage() {
 
   return (
     <motion.div 
-      className="min-h-screen bg-background p-4 sm:p-6 lg:p-8"
+      className="flex flex-col min-h-[calc(100vh-4rem)] bg-background"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
     >
-      {/* Header Section */}
+      {/* Header with Top Bar */}
       <motion.div 
-        className="mb-8"
+        className="border-b border-border/50 bg-background/80 backdrop-blur-sm p-6 md:p-8"
         variants={itemVariants}
       >
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div>
-            <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-2">
-              <span className="font-pacifico text-5xl sm:text-6xl text-secondary block mb-1">Your</span>
-              <span className="font-headline">Dashboard</span>
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-2">
+              <span className="font-pacifico text-5xl md:text-6xl text-secondary">Your</span>
+              {' '}Dashboard
             </h1>
-            <p className="text-foreground/70 text-lg">
+            <p className="text-foreground/60">
               Manage your signature board and share memories with friends.
             </p>
           </div>
@@ -200,24 +200,24 @@ export default function DashboardPage() {
               <DropdownMenuTrigger asChild>
                 <Button 
                   disabled={isDownloading}
-                  className="bg-gradient-to-r from-primary to-secondary hover:shadow-lg text-white rounded-xl font-semibold transition-all duration-300 group"
+                  className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all group"
                 >
                   {isDownloading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <Download className="mr-2 h-4 w-4 group-hover:animate-bounce" />
                   )}
-                  {isDownloading ? 'Downloading...' : 'Export'}
+                  {isDownloading ? 'Exporting...' : 'Export Board'}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56">
                 <DropdownMenuItem onClick={handleDownloadImage}>
                   <ImageIcon className="mr-2 h-4 w-4 text-primary" />
-                  <span>Download as Image (PNG)</span>
+                  <span>Export as Image (PNG)</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleDownloadPdf}>
                   <FileText className="mr-2 h-4 w-4 text-secondary" />
-                  <span>Download as PDF</span>
+                  <span>Export as PDF</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -225,55 +225,71 @@ export default function DashboardPage() {
         </div>
       </motion.div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        {/* Board Section */}
-        <motion.div className="lg:col-span-2 space-y-6" variants={itemVariants}>
-          <motion.div 
-            className="relative group"
-            whileHover={{ scale: 1.02 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="absolute -inset-1 bg-gradient-to-r from-primary/50 via-secondary/50 to-accent/50 rounded-2xl opacity-20 group-hover:opacity-40 blur-xl transition-all duration-500"></div>
-            <div className="relative w-full aspect-[4/3] rounded-2xl border border-border/50 shadow-2xl overflow-hidden bg-black/50 backdrop-blur-sm">
-              <TShirtBoard
-                ref={boardRef}
-                existingSignatures={(signatures || []).map((s): ExistingSignature => ({
-                  signatureImageUrl: s.signatureImageUrl,
-                  position: s.position,
-                }))}
-                className="w-full h-full"
-              />
-            </div>
-          </motion.div>
-        </motion.div>
-
-        {/* Sidebar */}
-        <motion.div className="lg:col-span-1" variants={itemVariants}>
-          <div className="sticky top-8 space-y-6">
-            {/* Share Card */}
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto">
+        <div className="p-6 md:p-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start max-w-7xl mx-auto">
+            {/* Canvas Section - Takes 2 columns */}
             <motion.div 
-              className="group relative rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-border overflow-hidden"
-              whileHover={{ translateY: -4 }}
+              className="lg:col-span-2"
+              variants={itemVariants}
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <div className="relative z-10">
-                <ShareLink studentId={student.id} />
+              <div className="space-y-4 mb-4">
+                <h2 className="text-xl font-bold">Your Signature Board</h2>
+                <p className="text-sm text-foreground/60">Share your unique canvas with friends</p>
               </div>
+              
+              <motion.div 
+                className="relative group"
+                whileHover={{ scale: 1.01 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="absolute -inset-2 bg-gradient-to-r from-primary/30 via-secondary/30 to-accent/30 rounded-3xl opacity-20 group-hover:opacity-40 blur-2xl transition-all duration-500"></div>
+                <div className="relative w-full aspect-[4/3] rounded-2xl border-2 border-border shadow-2xl overflow-hidden bg-black/50">
+                  <TShirtBoard
+                    ref={boardRef}
+                    existingSignatures={(signatures || []).map((s): ExistingSignature => ({
+                      signatureImageUrl: s.signatureImageUrl,
+                      position: s.position,
+                    }))}
+                    className="w-full h-full"
+                  />
+                </div>
+              </motion.div>
             </motion.div>
 
-            {/* Summary Card */}
+            {/* Right Sidebar - Stacked Cards */}
             <motion.div 
-              className="group relative rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-border overflow-hidden"
-              whileHover={{ translateY: -4 }}
+              className="lg:col-span-1"
+              variants={itemVariants}
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-secondary/10 via-transparent to-primary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <div className="relative z-10">
-                <SentimentSummary signatures={signatures || []} />
+              <div className="sticky top-8 space-y-6">
+                {/* Share Card */}
+                <motion.div 
+                  className="card-box space-y-4"
+                  whileHover={{ translateY: -4 }}
+                >
+                  <h3 className="text-lg font-bold">Share Board</h3>
+                  <div className="border-t border-border/30 pt-4">
+                    <ShareLink studentId={student.id} />
+                  </div>
+                </motion.div>
+
+                {/* Divider */}
+                <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent"></div>
+
+                {/* Summary Card */}
+                <motion.div 
+                  className="card-box"
+                  whileHover={{ translateY: -4 }}
+                >
+                  <h3 className="text-lg font-bold mb-4">Board Insights</h3>
+                  <SentimentSummary signatures={signatures || []} />
+                </motion.div>
               </div>
             </motion.div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </motion.div>
   );

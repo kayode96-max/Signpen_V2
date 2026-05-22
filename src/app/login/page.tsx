@@ -57,73 +57,132 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-background p-4 relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/20 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-secondary/20 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float" style={{ animationDelay: '2s' }}></div>
+    <div className="flex flex-col min-h-screen bg-background text-foreground overflow-hidden">
+      {/* Header */}
+      <motion.header 
+        className="border-b border-border/50 bg-background/80 backdrop-blur-xl"
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.6 }}
+      >
+        <div className="container mx-auto px-4 md:px-6 h-16 md:h-20 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 group hover:opacity-80 transition-opacity">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold text-lg shadow-lg">
+              S
+            </div>
+            <span className="text-lg font-bold font-headline">SignPen</span>
+          </Link>
+          <Link href="/" className="text-sm text-foreground/60 hover:text-foreground transition-colors">
+            Back Home
+          </Link>
+        </div>
+      </motion.header>
+
+      {/* Main Content - 2 Column Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Side - Branding & Value Props */}
+        <motion.div 
+          className="hidden lg:flex flex-1 bg-gradient-to-br from-primary/10 via-secondary/5 to-background border-r border-border/50 relative overflow-hidden"
+          initial={{ x: -100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.1 }}
+        >
+          {/* Background decoration */}
+          <div className="absolute -top-40 -left-40 w-80 h-80 bg-primary/20 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float"></div>
+          <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-secondary/20 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" style={{ animationDelay: '2s' }}></div>
+
+          <div className="relative z-10 flex flex-col justify-center items-start p-12 space-y-12 max-w-md">
+            <motion.div className="space-y-6" variants={containerVariants}>
+              <motion.h1 
+                className="text-5xl font-bold tracking-tight"
+                variants={itemVariants}
+              >
+                <span className="font-sacramento text-6xl text-primary block mb-2">Your</span>
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">Stories</span>
+              </motion.h1>
+              <motion.p 
+                className="text-lg text-foreground/70 leading-relaxed"
+                variants={itemVariants}
+              >
+                Create your personalized signature board and collect beautiful memories from friends and classmates.
+              </motion.p>
+            </motion.div>
+
+            {/* Features List */}
+            <motion.ul className="space-y-4" variants={containerVariants}>
+              {[
+                { icon: '✨', text: 'Interactive Canvas' },
+                { icon: '🎨', text: 'Creative Tools' },
+                { icon: '💾', text: 'Export & Keep' },
+              ].map((item, idx) => (
+                <motion.li 
+                  key={idx}
+                  className="flex items-center gap-3"
+                  variants={itemVariants}
+                >
+                  <span className="text-2xl">{item.icon}</span>
+                  <span className="text-foreground/80">{item.text}</span>
+                </motion.li>
+              ))}
+            </motion.ul>
+          </div>
+        </motion.div>
+
+        {/* Right Side - Auth Form */}
+        <motion.div 
+          className="flex-1 lg:flex-none lg:w-96 flex flex-col justify-center items-center p-6 md:p-8"
+          initial={{ x: 100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+        >
+          <motion.div 
+            className="w-full max-w-sm space-y-6"
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            {/* Header */}
+            <motion.div className="text-center space-y-2" variants={itemVariants}>
+              <h2 className="text-4xl font-bold font-pacifico text-secondary">Welcome</h2>
+              <p className="text-foreground/60">
+                Sign in or create an account
+              </p>
+            </motion.div>
+
+            {/* Auth Card */}
+            <motion.div
+              variants={itemVariants}
+              className="card-box"
+            >
+              <div className="space-y-6">
+                <AuthForm />
+              </div>
+            </motion.div>
+
+            {/* Footer Text */}
+            <motion.p 
+              className="text-xs text-foreground/50 text-center"
+              variants={itemVariants}
+            >
+              By signing up, you agree to create a SignPen account and start collecting memories.
+            </motion.p>
+          </motion.div>
+        </motion.div>
       </div>
 
-      <motion.div 
-        className="w-full max-w-md relative z-10"
-        initial="hidden"
-        animate="visible"
-        variants={containerVariants}
+      {/* Footer */}
+      <motion.footer 
+        className="border-t border-border/50 bg-card/50 backdrop-blur-xl"
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.6, delay: 0.3 }}
       >
-        {/* Logo */}
-        <motion.div 
-          className="text-center mb-8"
-          variants={itemVariants}
-        >
-          <Link href="/" className="inline-flex items-center gap-3 group">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow duration-300">
-              <Image
-                src="/images/signpen.png"
-                alt="SignPen Logo"
-                width={28}
-                height={28}
-                className="object-contain filter invert"
-              />
-            </div>
-            <span className="text-xl font-bold font-headline group-hover:text-primary transition-colors">SignPen</span>
-          </Link>
-        </motion.div>
-
-        {/* Main Auth Card */}
-        <motion.div
-          variants={itemVariants}
-        >
-          <Card className="w-full border border-border/50 backdrop-blur-sm bg-card/95 shadow-2xl rounded-2xl overflow-hidden">
-            {/* Card glow effect */}
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10 opacity-0 hover:opacity-100 transition-opacity duration-500"></div>
-            
-            <CardHeader className="text-center pb-4 relative z-10">
-              <motion.div variants={itemVariants} className="space-y-2">
-                <CardTitle className="text-4xl font-bold font-pacifico text-secondary">Welcome</CardTitle>
-                <CardDescription className="text-base">
-                  Sign in or create an account to start collecting memories
-                </CardDescription>
-              </motion.div>
-            </CardHeader>
-
-            <CardContent className="relative z-10">
-              <motion.div variants={itemVariants}>
-                <AuthForm />
-              </motion.div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Back to home link */}
-        <motion.div 
-          className="text-center mt-6"
-          variants={itemVariants}
-        >
-          <Link href="/" className="text-sm text-foreground/60 hover:text-foreground transition-colors duration-300 group">
-            ← <span className="group-hover:underline">Back to Home</span>
-          </Link>
-        </motion.div>
-      </motion.div>
+        <div className="container mx-auto px-4 md:px-6 py-6 text-center">
+          <p className="text-xs text-foreground/50">
+            &copy; {new Date().getFullYear()} SignPen. All rights reserved.
+          </p>
+        </div>
+      </motion.footer>
     </div>
   );
 }

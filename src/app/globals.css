@@ -188,4 +188,37 @@ h6 {
       animation-duration: 0.5s;
     }
   }
+
+  /* Layout Utilities */
+  .section {
+    @apply w-full py-16 md:py-24 lg:py-32;
+  }
+
+  .section-light {
+    @apply section bg-background;
+  }
+
+  .section-dark {
+    @apply section bg-card/50 border-b border-border/50;
+  }
+
+  .section-accent {
+    @apply section bg-gradient-to-r from-primary/5 via-secondary/5 to-accent/5 border-b border-border/30;
+  }
+
+  .container-box {
+    @apply rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-lg p-6 md:p-8 hover:shadow-xl transition-all duration-300;
+  }
+
+  .section-divider {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-border to-transparent my-8 md:my-12;
+  }
+
+  .card-box {
+    @apply rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-6 md:p-8 shadow-lg hover:shadow-xl hover:border-border transition-all duration-300;
+  }
+
+  .glass-card {
+    @apply rounded-2xl border border-border/30 bg-white/10 dark:bg-white/5 backdrop-blur-xl p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300;
+  }
 }
