@@ -31,13 +31,13 @@ const itemVariants = {
 
 export default function Home() {
   return (
-    <div className="dark flex flex-col min-h-screen bg-black text-white">
+    <div className="dark flex flex-col min-h-screen bg-gradient-to-b from-black via-zinc-950 to-black text-white">
       <NavBar />
       <main className="flex-1">
         <Hero />
         <Features />
 
-        <section className="w-full py-20 md:py-28 lg:py-32 bg-black">
+        <section className="w-full py-20 md:py-28 lg:py-32 bg-transparent">
           <motion.div 
             className="container mx-auto grid items-center justify-center gap-4 px-4 text-center md:px-6"
             initial="hidden"
@@ -64,7 +64,7 @@ export default function Home() {
           </motion.div>
         </section>
       </main>
-      <footer className="flex items-center justify-center w-full h-20 border-t border-zinc-900 bg-zinc-950">
+      <footer className="flex items-center justify-center w-full h-20 bg-transparent">
         <p className="text-sm text-zinc-500">
           &copy; {new Date().getFullYear()} SignPen. All rights reserved.
         </p>
