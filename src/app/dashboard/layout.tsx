@@ -1,27 +1,10 @@
+"use client";
 
-"use client"
-
-import {
-  Sidebar,
-  SidebarProvider,
-  SidebarInset,
-  SidebarHeader,
-  SidebarContent,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarFooter,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useAuth, useUser } from "@/firebase";
-import { LayoutDashboard, Palette, Settings, Loader2, LogOut } from "lucide-react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
-import UserNav from "@/components/dashboard/user-nav";
-import Image from "next/image";
-
+import React, { useEffect } from "react";
+import { useUser } from "@/firebase";
+import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import NavBar from "@/components/LandingPage/NavBar";
 
 export default function DashboardLayout({
   children,
@@ -29,8 +12,6 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, isUserLoading } = useUser();
-  const auth = useAuth();
-  const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
@@ -38,12 +19,6 @@ export default function DashboardLayout({
       router.push("/login");
     }
   }, [isUserLoading, user, router]);
-
-  const handleSignOut = async () => {
-    await auth.signOut();
-    router.push("/");
-  };
-
 
   if (isUserLoading || !user) {
     return (
@@ -53,97 +28,12 @@ export default function DashboardLayout({
     );
   }
 
-  const name = user.displayName || user.email || 'User';
-  const fallback = name.charAt(0).toUpperCase();
-
   return (
-    <SidebarProvider>
-      <Sidebar className="pt-4" collapsible="icon">
-        <SidebarHeader>
-           <div className="flex items-center gap-3 px-2">
-            <Avatar className="size-8">
-              <AvatarImage src={user.photoURL || undefined} alt={name} />
-              <AvatarFallback>{fallback}</AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-sidebar-foreground truncate">{name}</span>
-            </div>
-          </div>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname === "/dashboard"}
-                tooltip="Dashboard"
-              >
-                <Link href="/dashboard">
-                  <LayoutDashboard />
-                  <span>Dashboard</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname === "/dashboard/customize"}
-                tooltip="Customize"
-              >
-                <Link href="/dashboard/customize">
-                  <Palette />
-                  <span>Customize</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-             <SidebarMenuItem>
-              <SidebarMenuButton 
-                asChild
-                isActive={pathname === "/dashboard/settings"}
-                tooltip="Settings">
-                <Link href="/dashboard/settings">
-                  <Settings />
-                  <span>Settings</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarContent>
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleSignOut} tooltip="Sign Out">
-                <LogOut />
-                <span>Sign Out</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-      </Sidebar>
-      <SidebarInset className="bg-secondary">
-         <header className="md:hidden flex items-center gap-2 px-4 h-16 border-b bg-background">
-          <SidebarTrigger />
-           <Link
-              href="/"
-              className="flex items-center justify-center"
-              prefetch={false}
-            >
-              <Image
-                src="/images/signpen.png"
-                alt="SignPen Logo"
-                width={100}
-                height={25}
-                className="object-contain"
-              />
-            </Link>
-            <div className="ml-auto">
-              <UserNav user={user} onSignOut={handleSignOut} />
-            </div>
-        </header>
-        <div className="h-full">
-          {children}
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="flex flex-col min-h-screen bg-secondary text-foreground">
+      <NavBar />
+      <main className="flex-1 pt-24 pb-12 px-4 md:px-6">
+        {children}
+      </main>
+    </div>
   );
 }
