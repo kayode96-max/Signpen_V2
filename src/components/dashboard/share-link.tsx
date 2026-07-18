@@ -1,10 +1,6 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Copy, Check, Share2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
@@ -15,7 +11,6 @@ export default function ShareLink({ studentId }: { studentId: string }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    // This ensures window is available
     setShareUrl(`${window.location.origin}/${studentId}`);
   }, [studentId]);
 
@@ -38,35 +33,27 @@ export default function ShareLink({ studentId }: { studentId: string }) {
     }
   }
 
-  if (!shareUrl) {
-    return null;
-  }
+  if (!shareUrl) return null;
 
   return (
-    <Card className="bg-card/70 backdrop-blur-sm">
-      <CardHeader>
-        <CardTitle className="font-headline text-xl">Share Your Page</CardTitle>
-        <CardDescription>
-          Share this link with friends to get signatures.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Input value={shareUrl} readOnly className="flex-1 bg-muted/50 border-border" />
-          <motion.div whileTap={{ scale: 0.95 }}>
-            <Button onClick={handleCopy} variant="outline" size="icon" className="w-full sm:w-10">
-              {copied ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
-              <span className="sr-only">Copy</span>
-            </Button>
-          </motion.div>
-          <motion.div whileTap={{ scale: 0.95 }}>
-            <Button onClick={handleShare} size="icon" className="w-full sm:w-10">
-              <Share2 className="h-4 w-4" />
-              <span className="sr-only">Share</span>
-            </Button>
-          </motion.div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex items-center gap-2 bg-[#1c1c1e] p-1 rounded-full border border-white/10">
+      <motion.button 
+        whileTap={{ scale: 0.95 }}
+        onClick={handleCopy} 
+        className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
+      >
+        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+        <span>Copy Link</span>
+      </motion.button>
+      <div className="w-[1px] h-4 bg-white/20"></div>
+      <motion.button 
+        whileTap={{ scale: 0.95 }}
+        onClick={handleShare} 
+        className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
+      >
+        <Share2 className="h-4 w-4" />
+        <span>Share</span>
+      </motion.button>
+    </div>
   );
 }
