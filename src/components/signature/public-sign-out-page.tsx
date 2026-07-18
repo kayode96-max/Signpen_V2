@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo, useEffect } from "react";
 import type { Student, Signature } from "@/lib/types";
@@ -223,7 +223,7 @@ export default function PublicSignOutPage() {
         {/* The 3-D T-Shirt board — always visible, shows all signatures baked onto the shirt */}
         <div className="mt-4 flex-1 flex flex-col">
           <h1 className="text-3xl font-bold font-headline text-center mb-4 text-primary">The Board</h1>
-          <div className="w-full max-w-4xl mx-auto flex-1 min-h-[420px] rounded-lg border shadow-2xl dark:shadow-primary/20 shadow-primary/40 overflow-hidden bg-black">
+          <div className="w-full max-w-4xl mx-auto flex-1 min-h-[420px] rounded-lg border shadow-2xl dark:shadow-primary/20 shadow-primary/40 overflow-hidden bg-transparent">
             {areSignaturesLoading ? (
               <div className="flex h-full items-center justify-center">
                 <Loader2 className="animate-spin text-primary h-8 w-8" />
