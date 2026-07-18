@@ -1,4 +1,3 @@
-
 'use client';
 
 import CreateProfile from '@/components/dashboard/create-profile';
@@ -12,16 +11,9 @@ import {
   useDoc,
 } from '@/firebase';
 import { collection, query, doc } from 'firebase/firestore';
-import { Loader2, Download, Image as ImageIcon, FileText } from 'lucide-react';
+import { Loader2, Image as ImageIcon, FileText } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import type { Signature } from '@/lib/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -34,33 +26,11 @@ import type { ExistingSignature } from '@/components/3d/TShirtCanvas';
 const TShirtBoard = dynamic(() => import('@/components/3d/TShirtBoard'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full items-center justify-center bg-black rounded-lg">
+    <div className="flex h-full items-center justify-center bg-transparent">
       <Loader2 className="h-8 w-8 animate-spin text-white" />
     </div>
   ),
 });
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: {
-      duration: 0.5,
-    },
-  },
-};
-
 
 export default function DashboardPage() {
   const { user, isUserLoading } = useUser();
@@ -153,88 +123,87 @@ export default function DashboardPage() {
     }
   };
 
-
   if (isUserLoading || (isStudentLoading && !studentError)) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex items-center justify-center min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
       </div>
     );
   }
 
   if (!student) {
     if (user) {
-      return <CreateProfile user={user} />;
+      return (
+        <div className="min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24 pb-12 flex justify-center items-center">
+          <div className="w-full max-w-md bg-white rounded-lg p-6">
+            <CreateProfile user={user} />
+          </div>
+        </div>
+      );
     }
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex items-center justify-center min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
       </div>
     );
   }
 
   return (
-    <motion.div 
-      className="p-4 sm:p-6 lg:p-8 space-y-8"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      <motion.div 
-        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
-        variants={itemVariants}
-      >
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight font-headline">
-            Dashboard
-          </h1>
-          <p className="text-muted-foreground">
-            Here's what's happening on your SignPen page.
-          </p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button disabled={isDownloading}>
-              {isDownloading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="mr-2 h-4 w-4" />
-              )}
-              {isDownloading ? 'Downloading...' : 'Download Board'}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={handleDownloadImage}>
-              <ImageIcon className="mr-2 h-4 w-4" />
-              <span>Download as Image (PNG)</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDownloadPdf}>
-              <FileText className="mr-2 h-4 w-4" />
-              <span>Download as Document (PDF)</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </motion.div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        <motion.div className="lg:col-span-2 space-y-8" variants={itemVariants}>
-          <div className="w-full aspect-[4/3] rounded-lg border shadow-inner overflow-hidden bg-black">
-            <TShirtBoard
-              ref={boardRef}
-              existingSignatures={(signatures || []).map((s): ExistingSignature => ({
-                signatureImageUrl: s.signatureImageUrl,
-                position: s.position,
-              }))}
-              className="w-full h-full"
-            />
-          </div>
-        </motion.div>
-
-        <motion.div className="lg:col-span-1 space-y-8" variants={itemVariants}>
-          <ShareLink studentId={student.id} />
-          <SentimentSummary signatures={signatures || []} />
-        </motion.div>
+    <div className="min-h-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 pb-20 -mx-4 md:-mx-6 -mt-24 pt-24">
+      
+      {/* Header section */}
+      <div className="w-full max-w-7xl mx-auto pt-10 md:pt-20 px-8 pb-4">
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white text-center md:text-left">
+          Take a closer look.
+        </h1>
       </div>
-    </motion.div>
+
+      {/* Board section */}
+      <div className="w-full flex justify-center items-center px-4 md:px-8 py-8 h-[60vh] min-h-[400px] max-h-[800px]">
+        <div className="w-full h-full max-w-5xl relative">
+          <TShirtBoard
+            ref={boardRef}
+            existingSignatures={(signatures || []).map((s): ExistingSignature => ({
+              signatureImageUrl: s.signatureImageUrl,
+              position: s.position,
+            }))}
+            className="w-full h-full object-contain"
+          />
+        </div>
+      </div>
+
+      {/* Buttons section */}
+      <div className="w-full max-w-4xl mx-auto px-4 flex flex-col items-center gap-6 mt-8">
+        
+        <div className="flex flex-wrap justify-center items-center gap-4">
+          <ShareLink studentId={student.id} />
+          
+          <div className="flex items-center gap-2 bg-[#1c1c1e] p-1 rounded-full border border-white/10">
+            <motion.button 
+              whileTap={{ scale: 0.95 }}
+              onClick={handleDownloadImage}
+              disabled={isDownloading}
+              className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
+            >
+              <ImageIcon className="h-4 w-4" />
+              <span>PNG</span>
+            </motion.button>
+            <div className="w-[1px] h-4 bg-white/20"></div>
+            <motion.button 
+              whileTap={{ scale: 0.95 }}
+              onClick={handleDownloadPdf}
+              disabled={isDownloading}
+              className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
+            >
+              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              <span>PDF</span>
+            </motion.button>
+          </div>
+        </div>
+
+        <SentimentSummary signatures={signatures || []} />
+
+      </div>
+    </div>
   );
 }

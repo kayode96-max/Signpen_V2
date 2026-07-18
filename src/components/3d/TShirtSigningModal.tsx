@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
@@ -36,8 +36,8 @@ import type { TShirtCanvasRef, ExistingSignature } from './TShirtCanvas';
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full w-full items-center justify-center bg-black">
-      <div className="flex flex-col items-center gap-3 text-white">
+    <div className="flex h-full w-full items-center justify-center bg-transparent">
+      <div className="flex flex-col items-center gap-3 text-foreground">
         <Loader2 className="h-10 w-10 animate-spin" />
         <p className="text-sm font-medium">Loading 3D Model</p>
       </div>
@@ -201,7 +201,7 @@ export default function TShirtSigningModal({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="relative flex-1 min-h-0 bg-black overflow-hidden">
+          <div className="relative flex-1 min-h-0 bg-transparent overflow-hidden">
             <TShirtCanvas
               ref={shirtRef}
               onShirtClick={handleShirtClick}
