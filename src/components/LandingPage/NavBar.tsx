@@ -42,12 +42,12 @@ const NavBar = () => {
         <ul className='hidden md:flex items-center gap-10'>
           {middleLinks.map(({ label }) => (
             <li key={label}>
-              <a 
-                href={`#${label.toLowerCase()}`} 
+              <Link 
+                href={`/#${label.toLowerCase()}`} 
                 className='text-white/80 font-regular text-sm cursor-pointer hover:text-white transition-all duration-300 ease-in-out'
               >
                 {label}
-              </a>
+              </Link>
             </li>
           ))}
         </ul>
