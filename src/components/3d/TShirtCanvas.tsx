@@ -259,7 +259,6 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
 
       // Scene
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x111111);
       sceneRef.current = scene;
 
       // Camera
@@ -270,7 +269,8 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       cameraRef.current = camera;
 
       // Renderer
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setClearColor(0x000000, 0);
       renderer.setSize(w, h);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;

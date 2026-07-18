@@ -26,8 +26,8 @@ interface TShirtBoardProps {
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full w-full items-center justify-center bg-black rounded-lg">
-      <div className="flex flex-col items-center gap-3 text-white">
+    <div className="flex h-full w-full items-center justify-center bg-transparent rounded-lg">
+      <div className="flex flex-col items-center gap-3 text-foreground">
         <Loader2 className="h-10 w-10 animate-spin" />
         <p className="text-sm font-medium">Loading 3D Board…</p>
       </div>
