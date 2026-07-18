@@ -3,7 +3,7 @@
     {
       "id": "feature-canvas",
       "description": "An image representing an interactive, zoomable canvas with digital signatures.",
-      "imageUrl": "https://images.unsplash.com/photo-1605764947248-96f932048c8e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxpbnRlcmFjdGl2ZSUyMGNhbnZhc3xlbnwwfHx8fDE3NjQ3OTQzMDF8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "/images/interactive.png",
       "imageHint": "interactive canvas"
     },
     {
