@@ -26,7 +26,7 @@ const NavBar = () => {
 
   return (
     <header className='w-full fixed top-0 left-0 z-50 bg-black/90 backdrop-blur-sm border-b border-white/10'>
-      <nav className='container mx-auto flex items-center justify-between 2xl:px-0'>
+      <nav className='container mx-auto flex items-center justify-between py-3 px-6 2xl:px-0'>
         {/* Left Side: Logo */}
         <Link href="/" className="flex items-center">
           <img 
@@ -50,17 +50,44 @@ const NavBar = () => {
               </Link>
             </li>
           ))}
+          {user && (
+            <>
+              <li>
+                <Link 
+                  href="/dashboard/settings" 
+                  className='text-white/80 font-regular text-sm cursor-pointer hover:text-white transition-all duration-300 ease-in-out'
+                >
+                  Settings
+                </Link>
+              </li>
+              <li>
+                <Link 
+                  href="/dashboard/customize" 
+                  className='text-white/80 font-regular text-sm cursor-pointer hover:text-white transition-all duration-300 ease-in-out'
+                >
+                  Customize
+                </Link>
+              </li>
+            </>
+          )}
         </ul>
 
         {/* Right Side: Auth Buttons & Avatar */}
         <div className="flex items-center gap-4">
           {user ? (
             <>
-              <Link href="/dashboard">
+              <Link href="/dashboard" className="hidden sm:block">
                 <Button variant="ghost" className="text-white hover:text-white/80 hover:bg-white/10 text-sm">
                   Dashboard
                 </Button>
               </Link>
+              <Button 
+                variant="ghost" 
+                onClick={handleSignOut}
+                className="hidden md:flex text-white hover:text-white/80 hover:bg-white/10 text-sm"
+              >
+                Sign Out
+              </Button>
               <UserNav user={user} onSignOut={handleSignOut} />
             </>
           ) : (
