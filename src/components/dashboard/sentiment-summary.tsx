@@ -37,7 +37,7 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col-reverse items-end gap-4">
       <div className="flex items-center gap-2 bg-[#1c1c1e] p-1 rounded-full border border-white/10">
         <motion.button 
           whileTap={{ scale: 0.95 }}
@@ -54,7 +54,7 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md text-center text-sm text-white/80 p-4 bg-[#1c1c1e] rounded-2xl border border-white/10"
+          className="max-w-md text-right text-sm text-white/80 p-4 bg-[#1c1c1e] rounded-2xl border border-white/10"
         >
           {summary}
         </motion.div>

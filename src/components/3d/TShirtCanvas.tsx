@@ -265,14 +265,14 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       const w = container.clientWidth || 600;
       const h = container.clientHeight || 500;
       const camera = new THREE.PerspectiveCamera(35, w / h, 0.1, 1000);
-      camera.position.set(0, 0.5, 4.5);
+      camera.position.set(0, 0.5, 3.5);
       cameraRef.current = camera;
 
       // Renderer
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setClearColor(0x000000, 0);
       renderer.setSize(w, h);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -285,8 +285,6 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      controls.minDistance = 2.5;
-      controls.maxDistance = 8;
       controls.target.set(0, 0.5, 0);
       controls.minPolarAngle = Math.PI / 2;
       controls.maxPolarAngle = Math.PI / 2;
@@ -370,9 +368,24 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
             applyCompositeToAll();
           }
 
-          model.position.set(0, 0, 0);
-          model.scale.set(0, 0, 0);
-          scene.add(model);
+          // Compute center of the loaded model
+          const box = new THREE.Box3().setFromObject(model);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+
+          // Shift the model so its true visual center is at (0,0,0)
+          model.position.sub(center);
+
+          // Wrap it in a pivot group
+          const pivot = new THREE.Group();
+          pivot.add(model);
+          
+          // Initial states for animation
+          pivot.scale.setScalar(0);
+          scene.add(pivot);
+
+          // Adjust orbit controls to rotate exactly around this new center
+          controls.target.set(0, 0, 0);
 
           // Grow animation
           const start = Date.now();
@@ -380,7 +393,7 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
           const grow = () => {
             const t = Math.min((Date.now() - start) / dur, 1);
             const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-            model.scale.setScalar(1.8 * e);
+            pivot.scale.setScalar(2.5 * e);
             if (t < 1) requestAnimationFrame(grow);
             else {
               isLoadedRef.current = true;

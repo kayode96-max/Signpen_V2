@@ -64,8 +64,8 @@ export default function Home() {
           </motion.div>
         </section>
       </main>
-      <footer className="flex items-center justify-center w-full h-20 bg-transparent">
-        <p className="text-sm text-zinc-500">
+      <footer className="flex items-center justify-center w-full h-20 bg-black">
+        <p className="text-sm text-zinc-400">
           &copy; {new Date().getFullYear()} SignPen. All rights reserved.
         </p>
       </footer>
