@@ -103,13 +103,10 @@ export default function PublicSignOutPage() {
   }, []);
 
   useEffect(() => {
-    if (student?.pageSettings.theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    // We force dark mode on the public page to ensure Dialogs inherit the dark theme correctly
+    document.documentElement.classList.add("dark");
     return () => document.documentElement.classList.remove("dark");
-  }, [student?.pageSettings.theme]);
+  }, []);
 
   const handleOpenInfo = () => {
     if (hasAlreadySigned || isCheckingIp) return;
@@ -169,8 +166,8 @@ export default function PublicSignOutPage() {
 
   if (isStudentLoading)
     return (
-      <div className="flex items-center justify-center h-screen bg-secondary">
-        <Loader2 className="animate-spin h-8 w-8 text-primary" />
+      <div className="flex items-center justify-center h-screen bg-black">
+        <Loader2 className="animate-spin h-8 w-8 text-white" />
       </div>
     );
 
@@ -186,77 +183,98 @@ export default function PublicSignOutPage() {
   }));
 
   return (
-    <div className="container mx-auto px-4 py-8 md:py-12 relative min-h-screen flex flex-col">
+    <div className="absolute inset-0 bg-black text-white font-sans overflow-y-auto overflow-x-hidden pt-8 md:pt-12 px-4 selection:bg-white/20 flex flex-col z-0">
       <InstructionDialog open={showInstructionDialog} onOpenChange={setShowInstructionDialog} />
 
       {student.pageSettings.backgroundImageUrl && (
-        <div className="absolute inset-0 z-0 opacity-20">
-          <img src={student.pageSettings.backgroundImageUrl} alt="background" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 z-0 opacity-15">
+          <img src={student.pageSettings.backgroundImageUrl} alt="background" className="w-full h-full object-cover blur-sm" />
         </div>
       )}
 
-      <div className="w-full max-w-5xl mx-auto relative z-10 flex flex-col flex-1">
+      <div className="w-full max-w-6xl mx-auto relative z-10 flex flex-col lg:flex-row gap-12 items-center lg:items-stretch flex-1 py-4 md:py-12">
 
-        {/* Header */}
-        <div className="text-center mb-6">
-          <Avatar className="w-24 h-24 mb-4 border-4 border-background shadow-md mx-auto">
-            <AvatarImage src={student.profilePhotoUrl} />
-            <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
-          </Avatar>
-          <h2 className="text-4xl font-bold font-headline">{student.pageSettings.pageHeading}</h2>
-          <p className="text-xl text-muted-foreground mt-2">{student.pageSettings.pageSubheading}</p>
-        </div>
-
-        {/* CTA */}
-        <div className="my-4 text-center space-y-2">
-          <Button size="lg" className="text-lg" disabled={buttonDisabled} onClick={handleOpenInfo}>
-            {(isCheckingIp || isSubmitting) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {buttonText}
-          </Button>
-          {!hasAlreadySigned && (
-            <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-              <Info className="h-3 w-3" /> To prevent spam, you can only sign a board once.
-            </p>
-          )}
-        </div>
-
-        {/* The 3-D T-Shirt board — always visible, shows all signatures baked onto the shirt */}
-        <div className="mt-4 flex-1 flex flex-col">
-          <h1 className="text-3xl font-bold font-headline text-center mb-4 text-primary">The Board</h1>
-          <div className="w-full max-w-4xl mx-auto flex-1 min-h-[420px] rounded-lg border shadow-2xl dark:shadow-primary/20 shadow-primary/40 overflow-hidden bg-transparent">
+        {/* Left Column: The 3-D T-Shirt board */}
+        <div className="w-full lg:w-1/2 flex flex-col items-center justify-center order-2 lg:order-1">
+          <div className="w-full max-w-[85vw] sm:max-w-sm md:max-w-md aspect-[3/4] relative bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.15)_0%,_transparent_65%)] overflow-hidden flex items-center justify-center">
             {areSignaturesLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <Loader2 className="animate-spin text-primary h-8 w-8" />
-              </div>
+              <Loader2 className="animate-spin text-white h-8 w-8" />
             ) : (
               <TShirtBoard
                 existingSignatures={existingSignatures}
-                className="w-full h-full"
+                className="w-full h-full object-contain"
               />
             )}
           </div>
         </div>
+
+        {/* Right Column: Header & CTA */}
+        <div className="w-full lg:w-1/2 flex flex-col justify-center items-center lg:items-start text-center lg:text-left order-1 lg:order-2 px-4">
+          <Avatar className="w-28 h-28 lg:w-32 lg:h-32 mb-6 border-2 border-white/20 shadow-2xl mx-auto lg:mx-0">
+            <AvatarImage src={student.profilePhotoUrl} />
+            <AvatarFallback className="bg-[#1c1c1e] text-white/60 text-2xl">{student.name.charAt(0)}</AvatarFallback>
+          </Avatar>
+          
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white font-headline leading-tight">
+            {student.pageSettings.pageHeading}
+          </h2>
+          
+          <p className="text-xl md:text-2xl text-white/60 mt-4 mb-8">
+            {student.pageSettings.pageSubheading}
+          </p>
+
+          <div className="space-y-4 w-full sm:w-auto">
+            <Button 
+              size="lg" 
+              className="bg-white text-black hover:bg-gray-200 rounded-full w-full sm:w-auto px-10 h-14 text-lg font-medium shadow-xl transition-all" 
+              disabled={buttonDisabled} 
+              onClick={handleOpenInfo}
+            >
+              {(isCheckingIp || isSubmitting) && <Loader2 className="mr-2 h-5 w-5 animate-spin text-black" />}
+              {buttonText}
+            </Button>
+            
+            {!hasAlreadySigned && (
+              <p className="text-sm text-white/40 flex items-center justify-center lg:justify-start gap-1.5 mt-2">
+                <Info className="h-4 w-4" /> To prevent spam, you can only sign a board once.
+              </p>
+            )}
+          </div>
+        </div>
+
       </div>
 
       {/* Name + Note dialog */}
       <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Before you sign</DialogTitle>
+        <DialogContent className="sm:max-w-sm bg-[#121212] border border-white/10 text-white rounded-[2rem] shadow-2xl">
+          <DialogHeader className="pb-2 border-b border-white/5">
+            <DialogTitle className="text-xl font-semibold tracking-tight">Before you sign</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label>Your Name</Label>
-              <Input placeholder="Jane Doe" value={sigName} onChange={(e) => setSigName(e.target.value)} />
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-white/70">Your Name</Label>
+              <Input 
+                placeholder="Jane Doe" 
+                value={sigName} 
+                onChange={(e) => setSigName(e.target.value)} 
+                className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
+              />
             </div>
-            <div className="space-y-1">
-              <Label>Your Note</Label>
-              <Input placeholder="Wishing you all the best!" value={sigNote} onChange={(e) => setSigNote(e.target.value)} />
+            <div className="space-y-2">
+              <Label className="text-white/70">Your Note</Label>
+              <Input 
+                placeholder="Wishing you all the best!" 
+                value={sigNote} 
+                onChange={(e) => setSigNote(e.target.value)} 
+                className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
+              />
             </div>
           </div>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-            <Button onClick={handleOpenModal}>Open T-Shirt</Button>
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-white/5">
+            <DialogClose asChild>
+                <Button variant="ghost" className="text-white hover:bg-white/10 hover:text-white rounded-full">Cancel</Button>
+            </DialogClose>
+            <Button onClick={handleOpenModal} className="bg-white text-black hover:bg-gray-200 rounded-full px-6 transition-all font-medium">Open T-Shirt</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
