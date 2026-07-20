@@ -149,18 +149,18 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 pb-20 -mx-4 md:-mx-6 -mt-24 pt-24">
+    <div className="h-screen w-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 absolute inset-0 pt-16 overflow-hidden">
       
       {/* Header section */}
-      <div className="w-full max-w-7xl mx-auto pt-10 md:pt-20 px-8 pb-4">
-        <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white text-center md:text-left">
+      <div className="w-full max-w-7xl mx-auto pt-4 px-8 pb-4 shrink-0 z-10 relative pointer-events-none">
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white text-center md:text-left pointer-events-auto drop-shadow-lg">
           Take a closer look.
         </h1>
       </div>
 
-      {/* Board section */}
-      <div className="w-full flex justify-center items-center px-4 md:px-8 py-8 h-[60vh] min-h-[400px] max-h-[800px]">
-        <div className="w-full h-full max-w-5xl relative">
+      {/* Board section with Spotlight effect */}
+      <div className="w-full flex-1 flex justify-center items-center relative z-0 bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.15)_0%,_transparent_50%)]">
+        <div className="h-full aspect-square max-w-full">
           <TShirtBoard
             ref={boardRef}
             existingSignatures={(signatures || []).map((s): ExistingSignature => ({
@@ -173,9 +173,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Buttons section */}
-      <div className="w-full max-w-4xl mx-auto px-4 flex flex-col items-center gap-6 mt-8">
+      <div className="absolute bottom-6 right-6 flex flex-col items-end gap-4 z-20 pointer-events-auto">
         
-        <div className="flex flex-wrap justify-center items-center gap-4">
+        <SentimentSummary signatures={signatures || []} />
+
+        <div className="flex flex-wrap justify-end items-center gap-4">
           <ShareLink studentId={student.id} />
           
           <div className="flex items-center gap-2 bg-[#1c1c1e] p-1 rounded-full border border-white/10">
@@ -200,8 +202,6 @@ export default function DashboardPage() {
             </motion.button>
           </div>
         </div>
-
-        <SentimentSummary signatures={signatures || []} />
 
       </div>
     </div>
