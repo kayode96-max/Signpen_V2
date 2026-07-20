@@ -49,11 +49,15 @@ export interface TShirtCanvasRef {
 export interface ExistingSignature {
   signatureImageUrl: string;
   position: { x: number; y: number };
+  name?: string;
+  note?: string;
 }
 
 interface TShirtCanvasProps {
   /** Called whenever the user clicks on the shirt surface; receives normalised UV {x, y} */
   onShirtClick?: (uv: { x: number; y: number }) => void;
+  /** Called when hovering over a signature */
+  onHoverSignature?: (sig: ExistingSignature | null, x: number, y: number) => void;
   /** Pre-existing signatures to bake in on load */
   existingSignatures?: ExistingSignature[];
   /** Whether clicking is disabled (read-only / gallery mode) */
@@ -78,7 +82,7 @@ const toUvFromPercentPosition = (
 
 // ─── Component ──────────────────────────────────────────────────────────────
 const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
-  ({ onShirtClick, existingSignatures, readOnly = false, className }, ref) => {
+  ({ onShirtClick, onHoverSignature, existingSignatures, readOnly = false, className }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
 
     // Three.js objects kept in refs so they don't cause re-renders
@@ -467,7 +471,64 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ── Click → UV detection ───────────────────────────────────────────────
+    // ── Mouse Interaction ───────────────────────────────────────────────
+    const currentHoveredUrlRef = useRef<string | null>(null);
+
+    const handleMouseMove = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!onHoverSignature || !existingSignaturesRef.current) return;
+        const container = mountRef.current;
+        const renderer = rendererRef.current;
+        const camera = cameraRef.current;
+        const shirtMesh = shirtMeshRef.current;
+        if (!container || !renderer || !camera || !shirtMesh) return;
+
+        const rect = container.getBoundingClientRect();
+        mouseRef.current.set(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1
+        );
+
+        raycasterRef.current.setFromCamera(mouseRef.current, camera);
+        const meshes = shirtMeshesRef.current.length > 0 ? shirtMeshesRef.current : (shirtMesh ? [shirtMesh] : []);
+        const hits = raycasterRef.current.intersectObjects(meshes, false);
+        
+        let hovered: ExistingSignature | null = null;
+
+        if (hits.length > 0 && hits[0].uv) {
+          const hitUV = hits[0].uv;
+          const w = 340 / TEX_W / 2;
+          const h = 140 / TEX_H / 2;
+          
+          for (const sig of existingSignaturesRef.current) {
+             const uv = toUvFromPercentPosition(sig.position);
+             if (!uv) continue;
+             if (Math.abs(hitUV.x - uv.x) < w && Math.abs(hitUV.y - uv.y) < h) {
+               hovered = sig;
+               break;
+             }
+          }
+        }
+
+        const hoverUrl = hovered?.signatureImageUrl || null;
+        if (hoverUrl !== currentHoveredUrlRef.current) {
+          currentHoveredUrlRef.current = hoverUrl;
+          onHoverSignature(hovered, e.clientX, e.clientY);
+          container.style.cursor = hovered ? 'help' : (readOnly ? 'grab' : 'crosshair');
+        } else if (hovered) {
+          onHoverSignature(hovered, e.clientX, e.clientY);
+        }
+      },
+      [onHoverSignature, readOnly]
+    );
+
+    const handleMouseLeave = useCallback(() => {
+      if (currentHoveredUrlRef.current !== null && onHoverSignature) {
+        currentHoveredUrlRef.current = null;
+        onHoverSignature(null, 0, 0);
+      }
+    }, [onHoverSignature]);
+
     const handleCanvasClick = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         if (readOnly) return;
@@ -489,7 +550,6 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
         );
 
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
-        // Intersect against ALL mesh parts so the full shirt surface is clickable
         const meshes = shirtMeshesRef.current.length > 0 ? shirtMeshesRef.current : (shirtMesh ? [shirtMesh] : []);
         const hits = raycasterRef.current.intersectObjects(meshes, false);
         if (hits.length > 0 && hits[0].uv) {
@@ -507,6 +567,8 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
           pointerDownRef.current = { x: e.clientX, y: e.clientY };
         }}
         onClick={handleCanvasClick}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
         className={className}
         style={{ width: '100%', height: '100%', cursor: readOnly ? 'grab' : 'crosshair' }}
       />

@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const boardRef = useRef<TShirtBoardRef>(null);
   const { toast } = useToast();
   const [isDownloading, setIsDownloading] = useState(false);
+  const [hoveredSig, setHoveredSig] = useState<{ sig: ExistingSignature, x: number, y: number } | null>(null);
 
   const studentDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'students', user.uid) : null),
@@ -166,7 +167,16 @@ export default function DashboardPage() {
             existingSignatures={(signatures || []).map((s): ExistingSignature => ({
               signatureImageUrl: s.signatureImageUrl,
               position: s.position,
+              name: s.signatoryName,
+              note: s.signatoryNote,
             }))}
+            onHoverSignature={(sig, x, y) => {
+              if (sig) {
+                setHoveredSig({ sig, x, y });
+              } else {
+                setHoveredSig(null);
+              }
+            }}
             className="w-full h-full object-contain"
           />
         </div>
@@ -204,6 +214,22 @@ export default function DashboardPage() {
         </div>
 
       </div>
+
+      {/* Tooltip for Hovered Signature */}
+      {hoveredSig && hoveredSig.sig.name && (
+        <div 
+          className="fixed z-50 pointer-events-none bg-white/95 backdrop-blur-md text-black p-3.5 rounded-xl shadow-2xl max-w-[250px] border border-black/5 transform -translate-x-1/2 -translate-y-[calc(100%+20px)]"
+          style={{ left: hoveredSig.x, top: hoveredSig.y }}
+        >
+          <div className="font-bold text-[15px] leading-tight">{hoveredSig.sig.name}</div>
+          {hoveredSig.sig.note && (
+            <div className="text-sm text-gray-700 mt-2 leading-snug break-words">
+              {hoveredSig.sig.note}
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
