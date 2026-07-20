@@ -160,8 +160,8 @@ export default function DashboardPage() {
       </div>
 
       {/* Board section with Spotlight effect */}
-      <div className="w-full flex-1 flex justify-center items-center relative z-0 bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.15)_0%,_transparent_50%)]">
-        <div className="h-full aspect-square max-w-full">
+      <div className="w-full flex-1 flex justify-center items-center relative z-0">
+        <div className="w-full max-w-[85vw] sm:max-w-sm md:max-w-md lg:max-w-lg aspect-[3/4] relative bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.15)_0%,_transparent_65%)]">
           <TShirtBoard
             ref={boardRef}
             existingSignatures={(signatures || []).map((s): ExistingSignature => ({

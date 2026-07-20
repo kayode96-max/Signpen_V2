@@ -455,11 +455,24 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
         if (!container) return;
         const nw = container.clientWidth;
         const nh = container.clientHeight;
-        camera.aspect = nw / nh;
+        const aspect = nw / nh;
+        camera.aspect = aspect;
+
+        // Dynamically scale the camera so the shirt fills the screen optimally.
+        // If the screen is narrower than the shirt (aspect < 0.75), zoom out to fit the width.
+        // If the screen is wider, cap the zoom at 1 so the height doesn't get chopped off.
+        camera.zoom = Math.min(1, aspect / 0.75);
+        
         camera.updateProjectionMatrix();
+
+        // Update pixel ratio on every resize to perfectly catch browser zooming (Ctrl +)
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
         renderer.setSize(nw, nh);
       };
       window.addEventListener('resize', onResize);
+      
+      // Call once initially
+      onResize();
 
       return () => {
         window.removeEventListener('resize', onResize);
