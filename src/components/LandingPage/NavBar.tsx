@@ -25,8 +25,8 @@ const NavBar = () => {
   );
 
   return (
-    <header className='w-full fixed top-0 left-0 z-50 bg-black/90 backdrop-blur-sm border-b border-white/10'>
-      <nav className='container mx-auto flex items-center justify-between py-3 px-6 2xl:px-0'>
+    <header className='w-full fixed top-0 left-0 z-50 bg-transparent'>
+      <nav className='container mx-auto flex items-center justify-between py-4 px-6 2xl:px-0'>
         {/* Left Side: Logo */}
         <Link href="/" className="flex items-center">
           <img 
@@ -39,12 +39,12 @@ const NavBar = () => {
         </Link>
 
         {/* Middle Side: Navigation Links */}
-        <ul className='hidden md:flex items-center gap-10'>
+        <ul className='hidden md:flex items-center gap-4'>
           {middleLinks.map(({ label }) => (
             <li key={label}>
               <Link 
                 href={`/#${label.toLowerCase()}`} 
-                className='text-white/80 font-regular text-sm cursor-pointer hover:text-white transition-all duration-300 ease-in-out'
+                className='block rounded-full px-5 py-2 text-white/80 font-medium text-sm cursor-pointer hover:bg-white/10 hover:text-white transition-all duration-300 ease-in-out bg-[#1c1c1e] border border-white/10 shadow-sm'
               >
                 {label}
               </Link>
@@ -55,7 +55,7 @@ const NavBar = () => {
               <li>
                 <Link 
                   href="/dashboard/settings" 
-                  className='text-white/80 font-regular text-sm cursor-pointer hover:text-white transition-all duration-300 ease-in-out'
+                  className='block rounded-full px-5 py-2 text-white/80 font-medium text-sm cursor-pointer hover:bg-white/10 hover:text-white transition-all duration-300 ease-in-out bg-[#1c1c1e] border border-white/10 shadow-sm'
                 >
                   Settings
                 </Link>
@@ -63,7 +63,7 @@ const NavBar = () => {
               <li>
                 <Link 
                   href="/dashboard/customize" 
-                  className='text-white/80 font-regular text-sm cursor-pointer hover:text-white transition-all duration-300 ease-in-out'
+                  className='block rounded-full px-5 py-2 text-white/80 font-medium text-sm cursor-pointer hover:bg-white/10 hover:text-white transition-all duration-300 ease-in-out bg-[#1c1c1e] border border-white/10 shadow-sm'
                 >
                   Customize
                 </Link>
@@ -76,35 +76,34 @@ const NavBar = () => {
         <div className="flex items-center gap-4">
           {user ? (
             <>
-              <Link href="/dashboard" className="hidden sm:block">
-                <Button variant="ghost" className="text-white hover:text-white/80 hover:bg-white/10 text-sm">
-                  Dashboard
-                </Button>
+              <Link 
+                href="/dashboard" 
+                className="hidden sm:flex rounded-full px-5 py-2 hover:bg-white/10 items-center text-sm text-white transition-colors bg-[#1c1c1e] border border-white/10 shadow-sm font-medium"
+              >
+                Dashboard
               </Link>
-              <Button 
-                variant="ghost" 
+              <button 
                 onClick={handleSignOut}
-                className="hidden md:flex text-white hover:text-white/80 hover:bg-white/10 text-sm"
+                className="hidden md:flex rounded-full px-5 py-2 hover:bg-white/10 items-center text-sm text-white transition-colors bg-[#1c1c1e] border border-white/10 shadow-sm font-medium"
               >
                 Sign Out
-              </Button>
+              </button>
               <UserNav user={user} onSignOut={handleSignOut} />
             </>
           ) : (
             <>
-              <Link href="/login">
-                <Button variant="ghost" className="text-white hover:text-white/80 hover:bg-white/10 text-sm">
-                  Login
-                </Button>
+              <Link 
+                href="/login" 
+                className="rounded-full px-5 py-2 hover:bg-white/10 flex items-center text-sm text-white transition-colors bg-[#1c1c1e] border border-white/10 shadow-sm font-medium"
+              >
+                Login
               </Link>
-              <Link href="/login">
-                <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-medium">
-                  Sign Up
-                </Button>
+              <Link 
+                href="/login" 
+                className="rounded-full px-5 py-2 bg-white text-black hover:bg-gray-200 flex items-center text-sm transition-colors shadow-sm font-medium"
+              >
+                Sign Up
               </Link>
-              <div className="relative h-8 w-8 rounded-full border border-white/20 bg-white/10 flex items-center justify-center text-white/60">
-                <UserIcon className="h-4 w-4" />
-              </div>
             </>
           )}
         </div>
