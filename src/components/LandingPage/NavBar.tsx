@@ -25,7 +25,7 @@ const NavBar = () => {
   );
 
   return (
-    <header className='w-full fixed top-0 left-0 z-50 bg-transparent'>
+    <header className='w-full fixed top-0 left-0 z-50 bg-black/50 backdrop-blur-xl border-none transition-all duration-300'>
       <nav className='container mx-auto flex items-center justify-between py-4 px-6 2xl:px-0'>
         {/* Left Side: Logo */}
         <Link href="/" className="flex items-center">
