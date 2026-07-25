@@ -21,13 +21,14 @@ export interface TShirtBoardRef {
 interface TShirtBoardProps {
   existingSignatures?: ExistingSignature[];
   className?: string;
+  onHoverSignature?: (sig: ExistingSignature | null, x: number, y: number) => void;
 }
 
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full w-full items-center justify-center bg-black rounded-lg">
-      <div className="flex flex-col items-center gap-3 text-white">
+    <div className="flex h-full w-full items-center justify-center bg-transparent rounded-lg">
+      <div className="flex flex-col items-center gap-3 text-foreground">
         <Loader2 className="h-10 w-10 animate-spin" />
         <p className="text-sm font-medium">Loading 3D Board…</p>
       </div>
@@ -36,7 +37,7 @@ const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
 });
 
 const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
-  ({ existingSignatures, className }, ref) => {
+  ({ existingSignatures, className, onHoverSignature }, ref) => {
     const canvasRef = useRef<TShirtCanvasRef>(null);
 
     useImperativeHandle(ref, () => ({
@@ -51,6 +52,7 @@ const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
         existingSignatures={existingSignatures}
         readOnly
         className={className}
+        onHoverSignature={onHoverSignature}
       />
     );
   }

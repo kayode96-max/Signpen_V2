@@ -83,13 +83,13 @@ export default function CreateProfile({ user }: { user: User }) {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen p-4 bg-secondary">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
+    <div className="dark flex items-center justify-center min-h-screen bg-gradient-to-b from-black via-zinc-950 to-black p-4 -mx-4 md:-mx-6 -mt-24 pt-24 pb-12">
+      <Card className="w-full max-w-md bg-zinc-900/40 border-zinc-800/50 backdrop-blur-md shadow-2xl text-white">
+        <CardHeader className="text-center pb-6">
           <CardTitle className="text-2xl font-headline">
             Create Your Profile
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-zinc-400">
             Just one more step to get your personalized sign-out page ready.
           </CardDescription>
         </CardHeader>
@@ -101,10 +101,11 @@ export default function CreateProfile({ user }: { user: User }) {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Full Name</FormLabel>
+                    <FormLabel className="text-white/70">Full Name</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="e.g., Alex Doe"
+                        className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
                         {...field}
                         disabled={isLoading}
                       />
@@ -114,12 +115,16 @@ export default function CreateProfile({ user }: { user: User }) {
                 )}
               />
               <div className="space-y-2">
-                  <FormLabel>Email</FormLabel>
-                  <Input value={user.email || 'No email provided'} disabled />
+                  <FormLabel className="text-white/70">Email</FormLabel>
+                  <Input 
+                    value={user.email || 'No email provided'} 
+                    disabled 
+                    className="bg-[#1c1c1e] border-transparent text-white/50 rounded-xl h-12 px-4" 
+                  />
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full bg-white text-black hover:bg-gray-200 rounded-full h-12 font-medium" disabled={isLoading}>
                 {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin text-black" />
                 ) : null}
                 {isLoading ? 'Creating Profile...' : 'Create My Page'}
               </Button>

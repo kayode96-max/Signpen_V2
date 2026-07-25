@@ -49,11 +49,15 @@ export interface TShirtCanvasRef {
 export interface ExistingSignature {
   signatureImageUrl: string;
   position: { x: number; y: number };
+  name?: string;
+  note?: string;
 }
 
 interface TShirtCanvasProps {
   /** Called whenever the user clicks on the shirt surface; receives normalised UV {x, y} */
   onShirtClick?: (uv: { x: number; y: number }) => void;
+  /** Called when hovering over a signature */
+  onHoverSignature?: (sig: ExistingSignature | null, x: number, y: number) => void;
   /** Pre-existing signatures to bake in on load */
   existingSignatures?: ExistingSignature[];
   /** Whether clicking is disabled (read-only / gallery mode) */
@@ -78,7 +82,7 @@ const toUvFromPercentPosition = (
 
 // ─── Component ──────────────────────────────────────────────────────────────
 const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
-  ({ onShirtClick, existingSignatures, readOnly = false, className }, ref) => {
+  ({ onShirtClick, onHoverSignature, existingSignatures, readOnly = false, className }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
 
     // Three.js objects kept in refs so they don't cause re-renders
@@ -259,20 +263,20 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
 
       // Scene
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x111111);
       sceneRef.current = scene;
 
       // Camera
       const w = container.clientWidth || 600;
       const h = container.clientHeight || 500;
       const camera = new THREE.PerspectiveCamera(35, w / h, 0.1, 1000);
-      camera.position.set(0, 0.5, 4.5);
+      camera.position.set(0, 0.5, 3.5);
       cameraRef.current = camera;
 
       // Renderer
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setClearColor(0x000000, 0);
       renderer.setSize(w, h);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -285,8 +289,6 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      controls.minDistance = 2.5;
-      controls.maxDistance = 8;
       controls.target.set(0, 0.5, 0);
       controls.minPolarAngle = Math.PI / 2;
       controls.maxPolarAngle = Math.PI / 2;
@@ -370,9 +372,24 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
             applyCompositeToAll();
           }
 
-          model.position.set(0, 0, 0);
-          model.scale.set(0, 0, 0);
-          scene.add(model);
+          // Compute center of the loaded model
+          const box = new THREE.Box3().setFromObject(model);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+
+          // Shift the model so its true visual center is at (0,0,0)
+          model.position.sub(center);
+
+          // Wrap it in a pivot group
+          const pivot = new THREE.Group();
+          pivot.add(model);
+          
+          // Initial states for animation
+          pivot.scale.setScalar(0);
+          scene.add(pivot);
+
+          // Adjust orbit controls to rotate exactly around this new center
+          controls.target.set(0, 0, 0);
 
           // Grow animation
           const start = Date.now();
@@ -380,7 +397,7 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
           const grow = () => {
             const t = Math.min((Date.now() - start) / dur, 1);
             const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-            model.scale.setScalar(1.8 * e);
+            pivot.scale.setScalar(2.5 * e);
             if (t < 1) requestAnimationFrame(grow);
             else {
               isLoadedRef.current = true;
@@ -438,11 +455,24 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
         if (!container) return;
         const nw = container.clientWidth;
         const nh = container.clientHeight;
-        camera.aspect = nw / nh;
+        const aspect = nw / nh;
+        camera.aspect = aspect;
+
+        // Dynamically scale the camera so the shirt fills the screen optimally.
+        // If the screen is narrower than the shirt (aspect < 0.75), zoom out to fit the width.
+        // If the screen is wider, cap the zoom at 1 so the height doesn't get chopped off.
+        camera.zoom = Math.min(1, aspect / 0.75);
+        
         camera.updateProjectionMatrix();
+
+        // Update pixel ratio on every resize to perfectly catch browser zooming (Ctrl +)
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
         renderer.setSize(nw, nh);
       };
       window.addEventListener('resize', onResize);
+      
+      // Call once initially
+      onResize();
 
       return () => {
         window.removeEventListener('resize', onResize);
@@ -454,7 +484,64 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ── Click → UV detection ───────────────────────────────────────────────
+    // ── Mouse Interaction ───────────────────────────────────────────────
+    const currentHoveredUrlRef = useRef<string | null>(null);
+
+    const handleMouseMove = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!onHoverSignature || !existingSignaturesRef.current) return;
+        const container = mountRef.current;
+        const renderer = rendererRef.current;
+        const camera = cameraRef.current;
+        const shirtMesh = shirtMeshRef.current;
+        if (!container || !renderer || !camera || !shirtMesh) return;
+
+        const rect = container.getBoundingClientRect();
+        mouseRef.current.set(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1
+        );
+
+        raycasterRef.current.setFromCamera(mouseRef.current, camera);
+        const meshes = shirtMeshesRef.current.length > 0 ? shirtMeshesRef.current : (shirtMesh ? [shirtMesh] : []);
+        const hits = raycasterRef.current.intersectObjects(meshes, false);
+        
+        let hovered: ExistingSignature | null = null;
+
+        if (hits.length > 0 && hits[0].uv) {
+          const hitUV = hits[0].uv;
+          const w = 340 / TEX_W / 2;
+          const h = 140 / TEX_H / 2;
+          
+          for (const sig of existingSignaturesRef.current) {
+             const uv = toUvFromPercentPosition(sig.position);
+             if (!uv) continue;
+             if (Math.abs(hitUV.x - uv.x) < w && Math.abs(hitUV.y - uv.y) < h) {
+               hovered = sig;
+               break;
+             }
+          }
+        }
+
+        const hoverUrl = hovered?.signatureImageUrl || null;
+        if (hoverUrl !== currentHoveredUrlRef.current) {
+          currentHoveredUrlRef.current = hoverUrl;
+          onHoverSignature(hovered, e.clientX, e.clientY);
+          container.style.cursor = hovered ? 'help' : (readOnly ? 'grab' : 'crosshair');
+        } else if (hovered) {
+          onHoverSignature(hovered, e.clientX, e.clientY);
+        }
+      },
+      [onHoverSignature, readOnly]
+    );
+
+    const handleMouseLeave = useCallback(() => {
+      if (currentHoveredUrlRef.current !== null && onHoverSignature) {
+        currentHoveredUrlRef.current = null;
+        onHoverSignature(null, 0, 0);
+      }
+    }, [onHoverSignature]);
+
     const handleCanvasClick = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         if (readOnly) return;
@@ -476,7 +563,6 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
         );
 
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
-        // Intersect against ALL mesh parts so the full shirt surface is clickable
         const meshes = shirtMeshesRef.current.length > 0 ? shirtMeshesRef.current : (shirtMesh ? [shirtMesh] : []);
         const hits = raycasterRef.current.intersectObjects(meshes, false);
         if (hits.length > 0 && hits[0].uv) {
@@ -494,6 +580,8 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
           pointerDownRef.current = { x: e.clientX, y: e.clientY };
         }}
         onClick={handleCanvasClick}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
         className={className}
         style={{ width: '100%', height: '100%', cursor: readOnly ? 'grab' : 'crosshair' }}
       />

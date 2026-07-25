@@ -33,17 +33,26 @@ export default function UserNav({ user, onSignOut }: UserNavProps) {
             </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>{name}</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
+      <DropdownMenuContent 
+        align="end" 
+        className="bg-[#121212] border border-white/10 text-white rounded-2xl shadow-2xl p-2 w-56"
+      >
+        <DropdownMenuLabel className="font-medium text-white/70 px-3 py-2">{name}</DropdownMenuLabel>
+        <DropdownMenuSeparator className="bg-white/10 my-1" />
+        <DropdownMenuItem asChild className="hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-xl px-3 py-2 cursor-pointer transition-colors">
           <Link href="/dashboard">Dashboard</Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
+        <DropdownMenuItem asChild className="hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-xl px-3 py-2 cursor-pointer transition-colors">
           <Link href="/dashboard/settings">Settings</Link>
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onSignOut}>
+        <DropdownMenuItem asChild className="hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-xl px-3 py-2 cursor-pointer transition-colors">
+          <Link href="/dashboard/customize">Customize</Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="bg-white/10 my-1" />
+        <DropdownMenuItem 
+          onClick={onSignOut}
+          className="hover:bg-red-500/10 focus:bg-red-500/10 focus:text-red-500 text-red-500 rounded-xl px-3 py-2 cursor-pointer transition-colors"
+        >
           Sign Out
         </DropdownMenuItem>
       </DropdownMenuContent>

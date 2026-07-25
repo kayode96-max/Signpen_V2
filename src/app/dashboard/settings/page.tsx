@@ -212,27 +212,28 @@ export default function SettingsPage() {
 
 
   if (isUserLoading || isStudentLoading) {
-    return <div className="p-8 flex justify-center items-center h-full"><Loader2 className="animate-spin text-primary" /></div>;
+    return <div className="absolute inset-0 pt-24 bg-black flex justify-center items-center h-full"><Loader2 className="animate-spin text-white w-8 h-8" /></div>;
   }
   
   if (!user || !studentData) {
-    return <div className="p-8">Could not load user data.</div>
+    return <div className="absolute inset-0 pt-24 bg-black text-white p-8">Could not load user data.</div>
   }
 
   const name = user.displayName || user.email || 'User';
   const fallback = name.charAt(0).toUpperCase();
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-8 max-w-4xl mx-auto h-full overflow-y-auto">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Settings</h1>
-        <p className="text-muted-foreground">Manage your account and profile settings.</p>
-      </div>
+    <div className="absolute inset-0 pt-24 pb-12 overflow-y-auto overflow-x-hidden bg-black text-white font-sans selection:bg-white/20">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-10 max-w-4xl mx-auto">
+        <div>
+          <h1 className="text-3xl md:text-4xl lg:text-5xl font-semibold tracking-tight text-white font-headline">Settings</h1>
+          <p className="text-white/60 mt-2 text-lg">Manage your account and profile settings.</p>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile</CardTitle>
-          <CardDescription>Update your public profile information.</CardDescription>
+      <Card className="bg-[#121212] border-white/10 rounded-[2rem] shadow-2xl text-white">
+        <CardHeader className="pb-6">
+          <CardTitle className="text-2xl">Profile</CardTitle>
+          <CardDescription className="text-white/50">Update your public profile information.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <Form {...profileForm}>
@@ -242,51 +243,63 @@ export default function SettingsPage() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Full Name</FormLabel>
+                    <FormLabel className="text-white/70">Full Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Your full name" {...field} />
+                      <Input 
+                        className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
+                        placeholder="Your full name" 
+                        {...field} 
+                      />
                     </FormControl>
-                    <FormMessage />
+                    <FormMessage className="text-red-400" />
                   </FormItem>
                 )}
               />
-              <Button type="submit" disabled={profileForm.formState.isSubmitting}>
+              <Button 
+                type="submit" 
+                disabled={profileForm.formState.isSubmitting}
+                className="bg-white text-black hover:bg-gray-200 rounded-full px-8 h-12 font-medium shadow-sm transition-all mt-2"
+              >
                 {profileForm.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save Name
               </Button>
             </form>
           </Form>
 
-          <div className="pt-4 space-y-4 border-t">
+          <div className="pt-8 space-y-6 border-t border-white/10 mt-8">
             <div>
-              <Label className="text-base font-semibold">Profile / Avatar Picture</Label>
-              <p className="text-sm text-muted-foreground mt-1">
+              <Label className="text-lg font-semibold text-white">Profile / Avatar Picture</Label>
+              <p className="text-sm text-white/50 mt-1">
                 This photo appears on your public signing page and in the dashboard sidebar.
               </p>
             </div>
-            <div className="flex items-start gap-4">
-              <div className="relative">
-                <Avatar className="w-20 h-20 border-2 border-border shadow">
+            <div className="flex items-start gap-5">
+              <div className="relative group cursor-pointer" onClick={() => handleFileSelect('profile')}>
+                <Avatar className="w-20 h-20 border-2 border-white/10 shadow-lg">
                   <AvatarImage src={user.photoURL || undefined} alt={name} />
-                  <AvatarFallback className="text-2xl">{fallback}</AvatarFallback>
+                  <AvatarFallback className="text-2xl bg-[#1c1c1e] text-white/60">{fallback}</AvatarFallback>
                 </Avatar>
                 {/* Quick-change overlay button */}
-                <button
-                  onClick={() => handleFileSelect('profile')}
-                  disabled={isUploading}
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 hover:opacity-100 transition-opacity text-white"
+                <div
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity text-white"
                   title="Change photo"
                 >
-                  {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
-                </button>
+                  {isUploading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Upload className="h-6 w-6" />}
+                </div>
               </div>
-              <div className="space-y-2">
-                <Button variant="outline" onClick={() => handleFileSelect('profile')} disabled={isUploading}>
+              <div className="space-y-3 pt-1">
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  onClick={() => handleFileSelect('profile')} 
+                  disabled={isUploading}
+                  className="bg-[#1c1c1e] text-white hover:bg-white/10 border-white/10 rounded-full px-6 h-11 transition-all shadow-sm"
+                >
                   {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                   {user.photoURL ? 'Change Photo' : 'Upload Photo'}
                 </Button>
                 <input type="file" ref={profilePhotoInputRef} onChange={(e) => handleImageUpload(e, 'profile')} accept="image/*" className="hidden" />
-                <p className="text-xs text-muted-foreground">Square image, under 2 MB. JPG or PNG.</p>
+                <p className="text-xs text-white/40">Square image, under 2 MB. JPG or PNG.</p>
               </div>
             </div>
           </div>
@@ -294,10 +307,10 @@ export default function SettingsPage() {
       </Card>
       
       {user?.providerData.some(p => p.providerId === 'password') && (
-        <Card>
-            <CardHeader>
-            <CardTitle>Change Password</CardTitle>
-            <CardDescription>Update your password. Make sure it's a strong one!</CardDescription>
+        <Card className="bg-[#121212] border-white/10 rounded-[2rem] shadow-2xl text-white">
+            <CardHeader className="pb-6">
+            <CardTitle className="text-2xl">Change Password</CardTitle>
+            <CardDescription className="text-white/50">Update your password. Make sure it's a strong one!</CardDescription>
             </CardHeader>
             <CardContent>
             <Form {...passwordForm}>
@@ -307,11 +320,11 @@ export default function SettingsPage() {
                     name="currentPassword"
                     render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Current Password</FormLabel>
+                        <FormLabel className="text-white/70">Current Password</FormLabel>
                         <FormControl>
-                        <Input type="password" {...field} />
+                        <Input type="password" {...field} className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30" />
                         </FormControl>
-                        <FormMessage />
+                        <FormMessage className="text-red-400" />
                     </FormItem>
                     )}
                 />
@@ -320,11 +333,11 @@ export default function SettingsPage() {
                     name="newPassword"
                     render={({ field }) => (
                     <FormItem>
-                        <FormLabel>New Password</FormLabel>
+                        <FormLabel className="text-white/70">New Password</FormLabel>
                         <FormControl>
-                        <Input type="password" {...field} />
+                        <Input type="password" {...field} className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30" />
                         </FormControl>
-                        <FormMessage />
+                        <FormMessage className="text-red-400" />
                     </FormItem>
                     )}
                 />
@@ -333,17 +346,22 @@ export default function SettingsPage() {
                     name="confirmPassword"
                     render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Confirm New Password</FormLabel>
+                        <FormLabel className="text-white/70">Confirm New Password</FormLabel>
                         <FormControl>
-                        <Input type="password" {...field} />
+                        <Input type="password" {...field} className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30" />
                         </FormControl>
-                        <FormMessage />
+                        <FormMessage className="text-red-400" />
                     </FormItem>
                     )}
                 />
-                <Button type="submit" disabled={passwordForm.formState.isSubmitting}>
+                <Button 
+                  type="submit" 
+                  disabled={passwordForm.formState.isSubmitting}
+                  className="bg-white text-black hover:bg-gray-200 rounded-full px-8 h-12 font-medium shadow-sm transition-all mt-4"
+                >
                     {passwordForm.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Change Password</Button>
+                    Change Password
+                </Button>
                 </form>
             </Form>
             </CardContent>
@@ -352,45 +370,52 @@ export default function SettingsPage() {
 
 
       {/* Background image — own section, not in danger zone */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Signing Page Background</CardTitle>
-          <CardDescription>
+      <Card className="bg-[#121212] border-white/10 rounded-[2rem] shadow-2xl text-white">
+        <CardHeader className="pb-6">
+          <CardTitle className="text-2xl">Signing Page Background</CardTitle>
+          <CardDescription className="text-white/50">
             Upload a background image displayed (at low opacity) behind your public signing page.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={() => handleFileSelect('background')} disabled={isUploading}>
+            <Button 
+              variant="outline" 
+              onClick={() => handleFileSelect('background')} 
+              disabled={isUploading}
+              className="bg-[#1c1c1e] text-white hover:bg-white/10 border-white/10 rounded-full px-6 h-11 transition-all shadow-sm"
+            >
               {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
               {studentData?.pageSettings?.backgroundImageUrl ? 'Change Background' : 'Upload Background'}
             </Button>
             <input type="file" ref={backgroundPhotoInputRef} onChange={(e) => handleImageUpload(e, 'background')} accept="image/*" className="hidden" />
           </div>
           {studentData?.pageSettings?.backgroundImageUrl && (
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Current Background</Label>
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold text-white/70">Current Background</Label>
               <img
                 src={studentData.pageSettings.backgroundImageUrl}
                 alt="background preview"
-                className="rounded-md border w-64 object-cover aspect-video shadow"
+                className="rounded-xl border border-white/10 w-64 object-cover aspect-video shadow-lg"
               />
             </div>
           )}
-          <p className="text-xs text-muted-foreground">Recommended: landscape image, under 5 MB.</p>
+          <p className="text-xs text-white/40">Recommended: landscape image, under 5 MB.</p>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-            <CardTitle>Danger Zone</CardTitle>
-            <CardDescription>These actions are irreversible. Please proceed with caution.</CardDescription>
+      <Card className="bg-[#121212] border-red-500/10 rounded-[2rem] shadow-2xl text-white">
+        <CardHeader className="pb-6">
+            <CardTitle className="text-2xl text-red-500">Danger Zone</CardTitle>
+            <CardDescription className="text-white/50">These actions are irreversible. Please proceed with caution.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
             <div className="pt-0">
               <AlertDialog>
                   <AlertDialogTrigger asChild>
-                      <Button variant="destructive">Delete Account</Button>
+                      <Button className="bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 rounded-full px-6 h-11 transition-all">
+                        Delete Account
+                      </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                       <AlertDialogHeader>
@@ -411,6 +436,7 @@ export default function SettingsPage() {
             </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

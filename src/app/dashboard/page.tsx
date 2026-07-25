@@ -1,4 +1,3 @@
-
 'use client';
 
 import CreateProfile from '@/components/dashboard/create-profile';
@@ -12,16 +11,15 @@ import {
   useDoc,
 } from '@/firebase';
 import { collection, query, doc } from 'firebase/firestore';
-import { Loader2, Download, Image as ImageIcon, FileText } from 'lucide-react';
-import { useRef, useState } from 'react';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
+import { Loader2, Image as ImageIcon, FileText, Download } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useRef, useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
 import type { Signature } from '@/lib/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -34,33 +32,11 @@ import type { ExistingSignature } from '@/components/3d/TShirtCanvas';
 const TShirtBoard = dynamic(() => import('@/components/3d/TShirtBoard'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full items-center justify-center bg-black rounded-lg">
+    <div className="flex h-full items-center justify-center bg-transparent">
       <Loader2 className="h-8 w-8 animate-spin text-white" />
     </div>
   ),
 });
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: {
-      duration: 0.5,
-    },
-  },
-};
-
 
 export default function DashboardPage() {
   const { user, isUserLoading } = useUser();
@@ -68,6 +44,7 @@ export default function DashboardPage() {
   const boardRef = useRef<TShirtBoardRef>(null);
   const { toast } = useToast();
   const [isDownloading, setIsDownloading] = useState(false);
+  const [hoveredSig, setHoveredSig] = useState<{ sig: ExistingSignature, x: number, y: number } | null>(null);
 
   const studentDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'students', user.uid) : null),
@@ -153,11 +130,10 @@ export default function DashboardPage() {
     }
   };
 
-
   if (isUserLoading || (isStudentLoading && !studentError)) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex items-center justify-center min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
       </div>
     );
   }
@@ -167,74 +143,99 @@ export default function DashboardPage() {
       return <CreateProfile user={user} />;
     }
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex items-center justify-center min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
       </div>
     );
   }
 
   return (
-    <motion.div 
-      className="p-4 sm:p-6 lg:p-8 space-y-8"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      <motion.div 
-        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
-        variants={itemVariants}
-      >
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight font-headline">
-            Dashboard
-          </h1>
-          <p className="text-muted-foreground">
-            Here's what's happening on your SignPen page.
-          </p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button disabled={isDownloading}>
-              {isDownloading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="mr-2 h-4 w-4" />
-              )}
-              {isDownloading ? 'Downloading...' : 'Download Board'}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={handleDownloadImage}>
-              <ImageIcon className="mr-2 h-4 w-4" />
-              <span>Download as Image (PNG)</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDownloadPdf}>
-              <FileText className="mr-2 h-4 w-4" />
-              <span>Download as Document (PDF)</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </motion.div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        <motion.div className="lg:col-span-2 space-y-8" variants={itemVariants}>
-          <div className="w-full aspect-[4/3] rounded-lg border shadow-inner overflow-hidden bg-black">
-            <TShirtBoard
-              ref={boardRef}
-              existingSignatures={(signatures || []).map((s): ExistingSignature => ({
-                signatureImageUrl: s.signatureImageUrl,
-                position: s.position,
-              }))}
-              className="w-full h-full"
-            />
-          </div>
-        </motion.div>
-
-        <motion.div className="lg:col-span-1 space-y-8" variants={itemVariants}>
-          <ShareLink studentId={student.id} />
-          <SentimentSummary signatures={signatures || []} />
-        </motion.div>
+    <div className="h-screen w-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 absolute inset-0 pt-16 overflow-hidden">
+      
+      {/* Header section */}
+      <div className="w-full max-w-7xl mx-auto pt-4 px-8 shrink-0 z-10 relative pointer-events-none">
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white text-center md:text-left pointer-events-auto drop-shadow-lg">
+          Take a closer look.
+        </h1>
       </div>
-    </motion.div>
+
+      {/* Board section with Spotlight effect */}
+      <div className="w-full flex-1 flex justify-center items-center relative z-0">
+        
+        {/* Spotlight */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] h-[100vw] max-w-[1200px] max-h-[1200px] rounded-full bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.12)_0%,_transparent_60%)] pointer-events-none -z-10"></div>
+
+        <div className="w-full h-full relative z-10">
+          <TShirtBoard
+            ref={boardRef}
+            existingSignatures={(signatures || []).map((s): ExistingSignature => ({
+              signatureImageUrl: s.signatureImageUrl,
+              position: s.position,
+              name: s.signatoryName,
+              note: s.signatoryNote,
+            }))}
+            onHoverSignature={(sig, x, y) => {
+              if (sig) {
+                setHoveredSig({ sig, x, y });
+              } else {
+                setHoveredSig(null);
+              }
+            }}
+            className="w-full h-full object-contain"
+          />
+        </div>
+      </div>
+
+      {/* Bottom Navigation Bar */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center justify-center w-max max-w-[90vw] z-20 pointer-events-auto">
+        <div className="flex items-center bg-[#1c1c1e]/90 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl overflow-x-auto no-scrollbar">
+          <ShareLink studentId={student.id} />
+          <div className="w-[1px] h-6 bg-white/20 mx-1 shrink-0"></div>
+          
+          <SentimentSummary signatures={signatures || []} />
+          
+          <div className="w-[1px] h-6 bg-white/20 mx-1 shrink-0"></div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
+                disabled={isDownloading}
+                className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors shrink-0 disabled:opacity-50"
+              >
+                {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                <span className="hidden sm:inline">Download</span>
+              </motion.button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="center" className="bg-[#1c1c1e] text-white border-white/10 mb-2 rounded-xl">
+              <DropdownMenuItem onClick={handleDownloadImage} className="cursor-pointer hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-lg">
+                <ImageIcon className="h-4 w-4 mr-2" />
+                <span>Save as PNG</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDownloadPdf} className="cursor-pointer hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-lg">
+                <FileText className="h-4 w-4 mr-2" />
+                <span>Save as PDF</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Tooltip for Hovered Signature */}
+      {hoveredSig && hoveredSig.sig.name && (
+        <div 
+          className="fixed z-50 pointer-events-none bg-white/95 backdrop-blur-md text-black p-3.5 rounded-xl shadow-2xl max-w-[250px] border border-black/5 transform -translate-x-1/2 -translate-y-[calc(100%+20px)]"
+          style={{ left: hoveredSig.x, top: hoveredSig.y }}
+        >
+          <div className="font-bold text-[15px] leading-tight">{hoveredSig.sig.name}</div>
+          {hoveredSig.sig.note && (
+            <div className="text-sm text-gray-700 mt-2 leading-snug break-words">
+              {hoveredSig.sig.note}
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
   );
 }

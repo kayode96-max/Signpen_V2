@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
@@ -36,8 +36,8 @@ import type { TShirtCanvasRef, ExistingSignature } from './TShirtCanvas';
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full w-full items-center justify-center bg-black">
-      <div className="flex flex-col items-center gap-3 text-white">
+    <div className="flex h-full w-full items-center justify-center bg-transparent">
+      <div className="flex flex-col items-center gap-3 text-foreground">
         <Loader2 className="h-10 w-10 animate-spin" />
         <p className="text-sm font-medium">Loading 3D Model</p>
       </div>
@@ -191,17 +191,17 @@ export default function TShirtSigningModal({
     <>
       {/* Main 3-D shirt modal */}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl w-full h-[92vh] p-0 overflow-hidden flex flex-col">
-          <DialogHeader className="px-4 pt-4 pb-2 border-b bg-background shrink-0">
-            <DialogTitle className="text-lg font-bold font-headline">Sign the T-Shirt</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="max-w-5xl w-full h-[92vh] p-0 overflow-hidden flex flex-col bg-black border-white/10 text-white rounded-[2rem] shadow-2xl">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-white/10 bg-[#121212] shrink-0">
+            <DialogTitle className="text-xl font-bold font-headline tracking-tight">Sign the T-Shirt</DialogTitle>
+            <DialogDescription className="text-white/60">
               {pendingPlacement
                 ? 'Signature placed! Submit when ready, or click the shirt to reposition.'
                 : 'Rotate the shirt and click anywhere on it to open the signing canvas.'}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="relative flex-1 min-h-0 bg-black overflow-hidden">
+          <div className="relative flex-1 min-h-0 bg-transparent overflow-hidden">
             <TShirtCanvas
               ref={shirtRef}
               onShirtClick={handleShirtClick}
@@ -220,92 +220,89 @@ export default function TShirtSigningModal({
               </div>
             )}
 
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2 flex-wrap justify-center">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 flex-wrap justify-center w-full px-4">
               <Button
                 size="sm"
-                variant="secondary"
-                className="bg-black/60 text-white border-white/20 hover:bg-black/80"
+                className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
                 onClick={() => { shirtRef.current?.undoLast(); setPendingPlacement(null); hasPlacedOneRef.current = false; }}
               >
-                <Undo2 className="h-4 w-4 mr-1" /> Undo
+                <Undo2 className="h-4 w-4 mr-2" /> Undo
               </Button>
               <Button
                 size="sm"
-                variant="secondary"
-                className="bg-black/60 text-white border-white/20 hover:bg-black/80"
+                className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
                 onClick={() => { shirtRef.current?.clearAll(); setPendingPlacement(null); hasPlacedOneRef.current = false; showToast('Cleared.'); }}
               >
-                <Trash2 className="h-4 w-4 mr-1" /> Clear
+                <Trash2 className="h-4 w-4 mr-2" /> Clear
               </Button>
               <Button
                 size="sm"
-                variant="secondary"
-                className="bg-black/60 text-white border-white/20 hover:bg-black/80"
+                className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
                 onClick={handleDownload}
               >
-                <Camera className="h-4 w-4 mr-1" /> Screenshot
+                <Camera className="h-4 w-4 mr-2" /> Screenshot
               </Button>
               <Button
                 size="sm"
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
+                className="bg-white text-black hover:bg-gray-200 rounded-full px-6 font-medium shadow-sm transition-all"
                 onClick={handleSubmit}
                 disabled={isSaving || !pendingPlacement}
               >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                Done  Submit
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                Done & Submit
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Drawing canvas modal  opens when user clicks the shirt */}
+      {/* Drawing canvas modal — opens when user clicks the shirt */}
       <Dialog open={drawOpen} onOpenChange={(v) => { if (!v) handleCancelDraw(); }}>
-        <DialogContent className="sm:max-w-[520px] w-full flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="px-5 pt-5 pb-3 border-b">
-            <DialogTitle className="font-headline">Draw Your Signature</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="sm:max-w-[520px] w-full flex flex-col gap-0 p-0 overflow-hidden bg-[#121212] border border-white/10 text-white rounded-[2rem] shadow-2xl">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-white/10 bg-[#121212]">
+            <DialogTitle className="text-xl font-bold font-headline tracking-tight">Draw Your Signature</DialogTitle>
+            <DialogDescription className="text-white/60">
               Use the tools below, then click Place on Shirt.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="px-4 py-4 space-y-3">
-            <div className="flex items-center gap-2 flex-wrap bg-secondary p-2 rounded-md">
-              <Button variant={signingTool === 'pen' ? 'secondary' : 'ghost'} size="sm" onClick={() => setSigningTool('pen')}>
+          <div className="px-5 py-5 space-y-4">
+            <div className="flex items-center gap-2 flex-wrap bg-[#1c1c1e] border border-white/10 p-2 rounded-xl">
+              <Button variant="ghost" size="sm" onClick={() => setSigningTool('pen')} className={signingTool === 'pen' ? 'bg-white/20 text-white hover:bg-white/20 hover:text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}>
                 <Pen className="mr-2 h-4 w-4" /> Draw
               </Button>
-              <Button variant={signingTool === 'text' ? 'secondary' : 'ghost'} size="sm" onClick={() => setSigningTool('text')}>
+              <Button variant="ghost" size="sm" onClick={() => setSigningTool('text')} className={signingTool === 'text' ? 'bg-white/20 text-white hover:bg-white/20 hover:text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}>
                 <Type className="mr-2 h-4 w-4" /> Text
               </Button>
               <div className="flex-1" />
-              <span className="text-xs text-muted-foreground hidden sm:inline">
-                Signing as <strong>{signatoryName}</strong>
+              <span className="text-xs text-white/40 hidden sm:inline">
+                Signing as <strong className="text-white/80">{signatoryName}</strong>
               </span>
-              <Button variant="ghost" size="icon" onClick={() => signatureRef.current?.clear()} className="text-destructive hover:text-destructive">
+              <Button variant="ghost" size="icon" onClick={() => signatureRef.current?.clear()} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
                 <RotateCcw className="h-4 w-4" />
               </Button>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap bg-secondary p-2 rounded-md">
-              <span className="text-sm">Color:</span>
+            <div className="flex items-center gap-2 flex-wrap bg-[#1c1c1e] border border-white/10 p-3 rounded-xl">
+              <span className="text-sm text-white/60">Color:</span>
               {colors.map((color) => (
                 <button
                   key={color}
-                  className={cn('w-6 h-6 rounded-full border-2 transition-transform hover:scale-110', selectedColor === color ? 'border-primary scale-110' : 'border-transparent')}
+                  className={cn('w-6 h-6 rounded-full border-2 transition-transform hover:scale-110', selectedColor === color ? 'border-white scale-110' : 'border-transparent')}
                   style={{ backgroundColor: color }}
                   onClick={() => setSelectedColor(color)}
                 />
               ))}
               {signingTool === 'text' && (
                 <>
-                  <span className="text-sm ml-2">Font:</span>
+                  <span className="text-sm ml-2 text-white/60">Font:</span>
                   <Select value={selectedFont} onValueChange={setSelectedFont}>
-                    <SelectTrigger className="w-[160px]">
+                    <SelectTrigger className="w-[140px] bg-[#2a2a2c] border-transparent text-white focus:ring-1 focus:ring-white/20 h-8">
                       <SelectValue placeholder="Select font" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-[#1c1c1e] border-white/10 text-white">
                       {fonts.map((font) => (
-                        <SelectItem key={font.className} value={font.className} className={font.className}>
+                        <SelectItem key={font.className} value={font.className} className={`${font.className} hover:bg-white/10 focus:bg-white/10 focus:text-white cursor-pointer`}>
                           {font.name}
                         </SelectItem>
                       ))}
@@ -315,26 +312,26 @@ export default function TShirtSigningModal({
               )}
             </div>
 
-            <div className="bg-secondary px-3 py-2 rounded-md flex items-center gap-3">
-              <span className="text-sm shrink-0">Size:</span>
+            <div className="bg-[#1c1c1e] border border-white/10 px-4 py-3 rounded-xl flex items-center gap-3">
+              <span className="text-sm text-white/60 shrink-0">Size:</span>
               <Slider min={1} max={12} step={1} value={[selectedSize]} onValueChange={(v) => setSelectedSize(v[0])} className="flex-1" />
             </div>
 
-            <div className="h-56 rounded-lg border-2 border-dashed border-border bg-white shadow-inner overflow-hidden">
+            <div className="h-56 rounded-2xl border-2 border-white/10 bg-white shadow-inner overflow-hidden relative">
               <SignatureCanvas
                 ref={signatureRef}
                 tool={signingTool}
                 color={selectedColor}
                 font={selectedFont}
                 size={selectedSize}
-                className="rounded-md"
+                className="w-full h-full"
               />
             </div>
           </div>
 
-          <div className="flex justify-between items-center px-4 pb-4">
-            <Button variant="ghost" onClick={handleCancelDraw}>Cancel</Button>
-            <Button onClick={handlePlaceOnShirt}>
+          <div className="flex justify-between items-center px-6 pb-6 pt-2">
+            <Button variant="ghost" onClick={handleCancelDraw} className="text-white hover:bg-white/10 hover:text-white rounded-full">Cancel</Button>
+            <Button onClick={handlePlaceOnShirt} className="bg-white text-black hover:bg-gray-200 rounded-full px-6 transition-all font-medium">
               <CheckCircle2 className="h-4 w-4 mr-1.5" /> Place on Shirt
             </Button>
           </div>
