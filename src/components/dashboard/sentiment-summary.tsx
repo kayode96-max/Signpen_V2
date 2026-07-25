@@ -37,30 +37,28 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
   };
 
   return (
-    <div className="flex flex-col-reverse items-end gap-4">
-      <div className="flex items-center gap-2 bg-[#1c1c1e] p-1 rounded-full border border-white/10">
-        <motion.button 
-          whileTap={{ scale: 0.95 }}
-          onClick={handleAnalyze} 
-          disabled={isLoading || signatures.length === 0} 
-          className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors disabled:opacity-50"
-        >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          <span>{isLoading ? 'Analyzing...' : (signatures.length > 0 ? 'AI Sentiments' : 'No Signatures Yet')}</span>
-        </motion.button>
-      </div>
+    <div className="relative flex items-center">
+      <motion.button 
+        whileTap={{ scale: 0.95 }}
+        onClick={handleAnalyze} 
+        disabled={isLoading || signatures.length === 0} 
+        className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors disabled:opacity-50"
+      >
+        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+        <span className="hidden sm:inline">{isLoading ? 'Analyzing...' : (signatures.length > 0 ? 'AI Sentiments' : 'No Signatures')}</span>
+      </motion.button>
 
       {summary && !isLoading && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md text-right text-sm text-white/80 p-4 bg-[#1c1c1e] rounded-2xl border border-white/10"
+          className="absolute bottom-full mb-4 right-0 w-64 sm:w-80 md:w-96 text-left text-sm text-white/90 p-4 bg-[#1c1c1e]/95 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl z-50"
         >
           {summary}
         </motion.div>
       )}
       {error && !isLoading && (
-        <div className="text-red-400 text-sm">{error}</div>
+        <div className="absolute bottom-full mb-4 right-0 text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 whitespace-nowrap z-50">{error}</div>
       )}
     </div>
   );
