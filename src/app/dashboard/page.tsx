@@ -11,7 +11,13 @@ import {
   useDoc,
 } from '@/firebase';
 import { collection, query, doc } from 'firebase/firestore';
-import { Loader2, Image as ImageIcon, FileText } from 'lucide-react';
+import { Loader2, Image as ImageIcon, FileText, Download } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useRef, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { Signature } from '@/lib/types';
@@ -153,7 +159,7 @@ export default function DashboardPage() {
     <div className="h-screen w-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 absolute inset-0 pt-16 overflow-hidden">
       
       {/* Header section */}
-      <div className="w-full max-w-7xl mx-auto pt-4 px-8 pb-4 shrink-0 z-10 relative pointer-events-none">
+      <div className="w-full max-w-7xl mx-auto pt-4 px-8 shrink-0 z-10 relative pointer-events-none">
         <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white text-center md:text-left pointer-events-auto drop-shadow-lg">
           Take a closer look.
         </h1>
@@ -161,7 +167,11 @@ export default function DashboardPage() {
 
       {/* Board section with Spotlight effect */}
       <div className="w-full flex-1 flex justify-center items-center relative z-0">
-        <div className="w-full max-w-[85vw] sm:max-w-sm md:max-w-md lg:max-w-lg aspect-[3/4] relative bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.15)_0%,_transparent_65%)]">
+        
+        {/* Spotlight */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] h-[100vw] max-w-[1200px] max-h-[1200px] rounded-full bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.12)_0%,_transparent_60%)] pointer-events-none -z-10"></div>
+
+        <div className="w-full h-full relative z-10">
           <TShirtBoard
             ref={boardRef}
             existingSignatures={(signatures || []).map((s): ExistingSignature => ({
@@ -182,37 +192,39 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Buttons section */}
-      <div className="absolute bottom-6 right-6 flex flex-col items-end gap-4 z-20 pointer-events-auto">
-        
-        <SentimentSummary signatures={signatures || []} />
-
-        <div className="flex flex-wrap justify-end items-center gap-4">
+      {/* Bottom Navigation Bar */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center justify-center w-max max-w-[90vw] z-20 pointer-events-auto">
+        <div className="flex items-center bg-[#1c1c1e]/90 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl overflow-x-auto no-scrollbar">
           <ShareLink studentId={student.id} />
+          <div className="w-[1px] h-6 bg-white/20 mx-1 shrink-0"></div>
           
-          <div className="flex items-center gap-2 bg-[#1c1c1e] p-1 rounded-full border border-white/10">
-            <motion.button 
-              whileTap={{ scale: 0.95 }}
-              onClick={handleDownloadImage}
-              disabled={isDownloading}
-              className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
-            >
-              <ImageIcon className="h-4 w-4" />
-              <span>PNG</span>
-            </motion.button>
-            <div className="w-[1px] h-4 bg-white/20"></div>
-            <motion.button 
-              whileTap={{ scale: 0.95 }}
-              onClick={handleDownloadPdf}
-              disabled={isDownloading}
-              className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
-            >
-              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              <span>PDF</span>
-            </motion.button>
-          </div>
-        </div>
+          <SentimentSummary signatures={signatures || []} />
+          
+          <div className="w-[1px] h-6 bg-white/20 mx-1 shrink-0"></div>
 
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
+                disabled={isDownloading}
+                className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors shrink-0 disabled:opacity-50"
+              >
+                {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                <span className="hidden sm:inline">Download</span>
+              </motion.button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="center" className="bg-[#1c1c1e] text-white border-white/10 mb-2 rounded-xl">
+              <DropdownMenuItem onClick={handleDownloadImage} className="cursor-pointer hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-lg">
+                <ImageIcon className="h-4 w-4 mr-2" />
+                <span>Save as PNG</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDownloadPdf} className="cursor-pointer hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-lg">
+                <FileText className="h-4 w-4 mr-2" />
+                <span>Save as PDF</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Tooltip for Hovered Signature */}
