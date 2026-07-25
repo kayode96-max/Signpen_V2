@@ -36,14 +36,14 @@ export default function ShareLink({ studentId }: { studentId: string }) {
   if (!shareUrl) return null;
 
   return (
-    <div className="flex items-center gap-2 bg-[#1c1c1e] p-1 rounded-full border border-white/10">
+    <>
       <motion.button 
         whileTap={{ scale: 0.95 }}
         onClick={handleCopy} 
         className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
       >
         {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-        <span>Copy Link</span>
+        <span className="hidden sm:inline">Copy Link</span>
       </motion.button>
       <div className="w-[1px] h-4 bg-white/20"></div>
       <motion.button 
@@ -52,8 +52,8 @@ export default function ShareLink({ studentId }: { studentId: string }) {
         className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors"
       >
         <Share2 className="h-4 w-4" />
-        <span>Share</span>
+        <span className="hidden sm:inline">Share</span>
       </motion.button>
-    </div>
+    </>
   );
 }
