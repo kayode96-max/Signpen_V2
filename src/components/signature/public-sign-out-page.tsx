@@ -183,7 +183,7 @@ export default function PublicSignOutPage() {
   }));
 
   return (
-    <div className="absolute inset-0 bg-black text-white font-sans overflow-y-auto overflow-x-hidden pt-8 md:pt-12 px-4 selection:bg-white/20 flex flex-col z-0">
+    <div className="absolute inset-0 bg-black text-white font-sans overflow-hidden px-4 md:px-8 selection:bg-white/20 flex flex-col z-0 h-[100dvh]">
       <InstructionDialog open={showInstructionDialog} onOpenChange={setShowInstructionDialog} />
 
       {student.pageSettings.backgroundImageUrl && (
@@ -192,11 +192,15 @@ export default function PublicSignOutPage() {
         </div>
       )}
 
-      <div className="w-full max-w-6xl mx-auto relative z-10 flex flex-col lg:flex-row gap-12 items-center lg:items-stretch flex-1 py-4 md:py-12">
+      <div className="w-full max-w-7xl mx-auto relative z-10 flex flex-col lg:flex-row flex-1 h-full lg:py-12">
 
-        {/* Left Column: The 3-D T-Shirt board */}
-        <div className="w-full lg:w-1/2 flex flex-col items-center justify-center order-2 lg:order-1">
-          <div className="w-full max-w-[85vw] sm:max-w-sm md:max-w-md aspect-[3/4] relative bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.15)_0%,_transparent_65%)] overflow-hidden flex items-center justify-center">
+        {/* Canvas Area (Middle on mobile, Left on desktop) */}
+        <div className="w-full lg:w-1/2 flex flex-col items-center justify-center order-2 lg:order-1 relative z-0 flex-1 lg:min-h-0 h-full">
+          
+          {/* Spotlight */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150vw] h-[150vw] lg:w-[80vw] lg:h-[80vw] max-w-[1200px] max-h-[1200px] rounded-full bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.12)_0%,_transparent_60%)] pointer-events-none -z-10"></div>
+          
+          <div className="w-full h-full relative z-10 flex items-center justify-center">
             {areSignaturesLoading ? (
               <Loader2 className="animate-spin text-white h-8 w-8" />
             ) : (
@@ -208,35 +212,43 @@ export default function PublicSignOutPage() {
           </div>
         </div>
 
-        {/* Right Column: Header & CTA */}
-        <div className="w-full lg:w-1/2 flex flex-col justify-center items-center lg:items-start text-center lg:text-left order-1 lg:order-2 px-4">
-          <Avatar className="w-28 h-28 lg:w-32 lg:h-32 mb-6 border-2 border-white/20 shadow-2xl mx-auto lg:mx-0">
-            <AvatarImage src={student.profilePhotoUrl} />
-            <AvatarFallback className="bg-[#1c1c1e] text-white/60 text-2xl">{student.name.charAt(0)}</AvatarFallback>
-          </Avatar>
-          
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white font-headline leading-tight">
-            {student.pageSettings.pageHeading}
-          </h2>
-          
-          <p className="text-xl md:text-2xl text-white/60 mt-4 mb-8">
-            {student.pageSettings.pageSubheading}
-          </p>
+        {/* Content Area (Overlaid on mobile, Right on desktop) */}
+        <div className="w-full lg:w-1/2 flex flex-col justify-between lg:justify-center items-center lg:items-start text-center lg:text-left order-1 lg:order-2 
+          absolute inset-0 lg:static pointer-events-none lg:pointer-events-auto p-4 pt-10 pb-8 lg:p-0 z-20 h-full"
+        >
+          {/* Top Header Section */}
+          <div className="flex flex-col items-center lg:items-start w-full pointer-events-auto">
+            <div className="flex items-center gap-3 lg:gap-4 mb-2 lg:mb-4">
+              <Avatar className="w-12 h-12 md:w-16 md:h-16 lg:w-20 lg:h-20 border-2 border-white/20 shadow-2xl shrink-0">
+                <AvatarImage src={student.profilePhotoUrl} />
+                <AvatarFallback className="bg-[#1c1c1e] text-white/60 text-lg lg:text-xl">{student.name.charAt(0)}</AvatarFallback>
+              </Avatar>
+              
+              <h2 className="text-2xl md:text-4xl lg:text-5xl font-semibold tracking-tight text-white font-headline leading-tight drop-shadow-lg text-left">
+                {student.pageSettings.pageHeading}
+              </h2>
+            </div>
+            
+            <p className="text-sm md:text-xl lg:text-2xl text-white/80 lg:text-white/60 mt-1 lg:mt-2 lg:mb-8 drop-shadow-lg max-w-sm lg:max-w-none text-center lg:text-left">
+              {student.pageSettings.pageSubheading}
+            </p>
+          </div>
 
-          <div className="space-y-4 w-full sm:w-auto">
+          {/* Bottom CTA Section */}
+          <div className="space-y-2 lg:space-y-4 w-full sm:w-auto pointer-events-auto flex flex-col items-center lg:items-start mt-auto lg:mt-0">
             <Button 
               size="lg" 
-              className="bg-white text-black hover:bg-gray-200 rounded-full w-full sm:w-auto px-10 h-14 text-lg font-medium shadow-xl transition-all" 
+              className="bg-white text-black hover:bg-gray-200 rounded-full w-full sm:w-auto px-8 lg:px-10 h-12 lg:h-14 text-base lg:text-lg font-medium shadow-xl transition-all" 
               disabled={buttonDisabled} 
               onClick={handleOpenInfo}
             >
-              {(isCheckingIp || isSubmitting) && <Loader2 className="mr-2 h-5 w-5 animate-spin text-black" />}
+              {(isCheckingIp || isSubmitting) && <Loader2 className="mr-2 h-4 lg:h-5 w-4 lg:w-5 animate-spin text-black" />}
               {buttonText}
             </Button>
             
             {!hasAlreadySigned && (
-              <p className="text-sm text-white/40 flex items-center justify-center lg:justify-start gap-1.5 mt-2">
-                <Info className="h-4 w-4" /> To prevent spam, you can only sign a board once.
+              <p className="text-xs lg:text-sm text-white/60 lg:text-white/40 flex items-center justify-center lg:justify-start gap-1.5 drop-shadow-lg">
+                <Info className="h-3 lg:h-4 w-3 lg:w-4" /> To prevent spam, you can only sign a board once.
               </p>
             )}
           </div>
