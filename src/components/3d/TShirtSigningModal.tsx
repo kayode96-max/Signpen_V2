@@ -201,26 +201,28 @@ export default function TShirtSigningModal({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="relative flex-1 min-h-0 bg-transparent overflow-hidden">
-            <TShirtCanvas
-              ref={shirtRef}
-              onShirtClick={handleShirtClick}
-              existingSignatures={existingSignatures}
-              className="w-full h-full"
-            />
+          <div className="relative flex-1 min-h-0 bg-transparent overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 relative w-full h-full">
+              <TShirtCanvas
+                ref={shirtRef}
+                onShirtClick={handleShirtClick}
+                existingSignatures={existingSignatures}
+                className="w-full h-full"
+              />
 
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs rounded-full px-4 py-1.5 flex items-center gap-2 pointer-events-none">
-              <Info className="h-3 w-3" />
-              <span>Rotate: drag  Sign: click the shirt</span>
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs rounded-full px-4 py-1.5 flex items-center gap-2 pointer-events-none">
+                <Info className="h-3 w-3" />
+                <span>Rotate: drag  Sign: click the shirt</span>
+              </div>
+
+              {toastMsg && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 text-white text-sm rounded-lg px-4 py-2 pointer-events-none z-50">
+                  {toastMsg}
+                </div>
+              )}
             </div>
 
-            {toastMsg && (
-              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-black/80 text-white text-sm rounded-lg px-4 py-2 pointer-events-none z-50">
-                {toastMsg}
-              </div>
-            )}
-
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 flex-wrap justify-center w-full px-4">
+            <div className="shrink-0 flex gap-3 flex-wrap justify-center w-full px-4 pb-6 pt-3 bg-[#121212] border-t border-white/10 z-20">
               <Button
                 size="sm"
                 className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
