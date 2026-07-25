@@ -140,13 +140,7 @@ export default function DashboardPage() {
 
   if (!student) {
     if (user) {
-      return (
-        <div className="min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24 pb-12 flex justify-center items-center">
-          <div className="w-full max-w-md bg-white rounded-lg p-6">
-            <CreateProfile user={user} />
-          </div>
-        </div>
-      );
+      return <CreateProfile user={user} />;
     }
     return (
       <div className="flex items-center justify-center min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24">
