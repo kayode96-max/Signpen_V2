@@ -150,7 +150,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="h-screen w-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 absolute inset-0 pt-16 overflow-hidden">
+    <div className="h-[100dvh] w-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 absolute inset-0 pt-16 overflow-hidden">
       
       {/* Header section */}
       <div className="w-full max-w-7xl mx-auto pt-4 px-8 shrink-0 z-10 relative pointer-events-none">
@@ -160,7 +160,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Board section with Spotlight effect */}
-      <div className="w-full flex-1 flex justify-center items-center relative z-0">
+      <div className="w-full flex-1 min-h-0 flex justify-center items-center relative z-0">
         
         {/* Spotlight */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] h-[100vw] max-w-[1200px] max-h-[1200px] rounded-full bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.12)_0%,_transparent_60%)] pointer-events-none -z-10"></div>
@@ -187,8 +187,8 @@ export default function DashboardPage() {
       </div>
 
       {/* Bottom Navigation Bar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center justify-center w-max max-w-[90vw] z-20 pointer-events-auto">
-        <div className="flex items-center bg-[#1c1c1e]/90 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl overflow-x-auto no-scrollbar">
+      <div className="w-full shrink-0 flex items-center justify-center pb-6 pt-2 z-20 relative pointer-events-auto px-4">
+        <div className="flex items-center bg-[#1c1c1e]/90 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl overflow-x-auto no-scrollbar max-w-[90vw]">
           <ShareLink studentId={student.id} />
           <div className="w-[1px] h-6 bg-white/20 mx-1 shrink-0"></div>
           
