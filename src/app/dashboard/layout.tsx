@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { useUser } from "@/firebase";
+import { useUser } from "@/supabase";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import NavBar from "@/components/LandingPage/NavBar";

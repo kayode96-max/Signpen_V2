@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/toaster";
-import { FirebaseClientProvider } from "@/firebase";
+import { SupabaseProvider } from "@/supabase";
 import {
   Alegreya,
   Inter,
@@ -40,24 +40,28 @@ export const metadata: Metadata = {
 const alegreya = Alegreya({
   subsets: ['latin'],
   display: 'swap',
+  preload: true,
   variable: '--font-headline',
 });
 
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
+  preload: true,
   variable: '--font-body',
 });
 
 const caveat = Caveat({
   subsets: ['latin'],
   display: 'swap',
+  preload: false,
   variable: '--font-caveat',
 });
 
 const dancingScript = Dancing_Script({
   subsets: ['latin'],
   display: 'swap',
+  preload: false,
   variable: '--font-dancing-script',
 });
 
@@ -65,6 +69,7 @@ const pacifico = Pacifico({
   subsets: ['latin'],
   weight: '400',
   display: 'swap',
+  preload: false,
   variable: '--font-pacifico',
 });
 
@@ -72,41 +77,47 @@ const indieFlower = Indie_Flower({
     subsets: ['latin'],
     weight: '400',
     display: 'swap',
-    variable: '--font-indie-flower'
+  preload: false,
+  variable: '--font-indie-flower'
 });
 
 const sourceCodePro = Source_Code_Pro({
     subsets: ['latin'],
     display: 'swap',
-    variable: '--font-source-code-pro'
+  preload: false,
+  variable: '--font-source-code-pro'
 })
 
 const greatVibes = Great_Vibes({
     subsets: ['latin'],
     weight: '400',
     display: 'swap',
-    variable: '--font-great-vibes'
+  preload: false,
+  variable: '--font-great-vibes'
 })
 
 const sacramento = Sacramento({
     subsets: ['latin'],
     weight: '400',
     display: 'swap',
-    variable: '--font-sacramento'
+  preload: false,
+  variable: '--font-sacramento'
 })
 
 const monsieurLaDoulaise = Monsieur_La_Doulaise({
     subsets: ['latin'],
     weight: '400',
     display: 'swap',
-    variable: '--font-monsieur-la-doulaise'
+  preload: false,
+  variable: '--font-monsieur-la-doulaise'
 })
 
 const unifrakturMaguntia = UnifrakturMaguntia({
     subsets: ['latin'],
     weight: '400',
     display: 'swap',
-    variable: '--font-unifraktur-maguntia'
+  preload: false,
+  variable: '--font-unifraktur-maguntia'
 })
 
 const alexBrush = Alex_Brush({
@@ -220,10 +231,10 @@ export default function RootLayout({
       <body
         className={cn("min-h-screen bg-background font-body antialiased")}
       >
-        <FirebaseClientProvider>
+        <SupabaseProvider>
           <main>{children}</main>
           <Toaster />
-        </FirebaseClientProvider>
+        </SupabaseProvider>
       </body>
     </html>
   );

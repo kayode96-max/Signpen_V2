@@ -1,6 +1,3 @@
-
-import type { FieldValue } from 'firebase/firestore';
-
 export interface Student {
   id: string;
   name: string;
@@ -24,7 +21,7 @@ export interface Signature {
   signatureImageUrl: string;
   signatoryName: string;
   signatoryNote: string;
-  timestamp: string | FieldValue;
+  timestamp: string;
   position: { x: number; y: number };
 }
 

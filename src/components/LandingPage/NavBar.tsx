@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth, useUser } from '@/supabase';
 import { NavLinks } from '../../constants';
 import { Button } from '@/components/ui/button';
 import { User as UserIcon } from 'lucide-react';
