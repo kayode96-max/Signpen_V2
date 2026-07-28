@@ -16,14 +16,14 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
-import { useFirebase } from "@/firebase/provider";
 import { 
+  useFirebase,
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
   updateProfile
-} from "firebase/auth";
+} from "@/supabase";
 import { useState } from "react";
 
 const loginSchema = z.object({

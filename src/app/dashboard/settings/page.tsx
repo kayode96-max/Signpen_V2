@@ -23,16 +23,20 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { useUser, useAuth, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import {
+  useUser,
+  useAuth,
+  useFirestore,
+  useDoc,
+  useMemoFirebase,
   updateProfile,
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
   deleteUser,
-} from 'firebase/auth';
-import { doc } from 'firebase/firestore';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+  doc,
+  setDocumentNonBlocking,
+} from '@/supabase';
 import type { Student } from '@/lib/types';
 import { Loader2, Upload } from 'lucide-react';
 import {
@@ -48,7 +52,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ChangeEvent, useEffect, useState, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { uploadImageAndGetURL } from '@/firebase/storage';
+import { uploadImageAndGetURL } from '@/supabase';
 
 
 const profileSchema = z.object({

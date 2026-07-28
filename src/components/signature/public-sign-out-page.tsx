@@ -8,9 +8,7 @@ import { Label } from "@/components/ui/label";
 import ThankYouDialog from "./thank-you-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Info } from "lucide-react";
-import { useDoc, useCollection, initializeFirebase } from "@/firebase";
-import { collection, doc, query, getDoc } from "firebase/firestore";
-import { signInAnonymously } from "firebase/auth";
+import { useDoc, useCollection, doc, collection, query, getDoc, signInAnonymously, initializeFirebase } from "@/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { notFound, useParams } from "next/navigation";
 import {
@@ -171,7 +169,10 @@ export default function PublicSignOutPage() {
       </div>
     );
 
-  if (!student) notFound();
+  if (!student) {
+    notFound();
+    return null;
+  }
 
   const buttonDisabled = isCheckingIp || hasAlreadySigned || isSubmitting;
   const buttonText = isCheckingIp ? "Checking..." : hasAlreadySigned ? "You've Already Signed" : "Leave Your Signature";

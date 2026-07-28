@@ -5,10 +5,8 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import type { User } from 'firebase/auth';
-import { useFirestore } from '@/firebase/provider';
-import { doc } from 'firebase/firestore';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import type { User } from '@/supabase/types';
+import { useFirestore, doc, setDocumentNonBlocking } from '@/supabase';
 import { Button } from '@/components/ui/button';
 import {
   Card,

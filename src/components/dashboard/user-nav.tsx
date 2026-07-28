@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { User } from "firebase/auth";
+import type { User } from "@/supabase/types";
 import Link from "next/link";
 
 interface UserNavProps {

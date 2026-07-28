@@ -9,8 +9,10 @@ import {
   useMemoFirebase,
   useFirestore,
   useDoc,
-} from '@/firebase';
-import { collection, query, doc } from 'firebase/firestore';
+  collection,
+  query,
+  doc
+} from '@/supabase';
 import { Loader2, Image as ImageIcon, FileText, Download } from 'lucide-react';
 import {
   DropdownMenu,
@@ -174,7 +176,7 @@ export default function DashboardPage() {
               name: s.signatoryName,
               note: s.signatoryNote,
             }))}
-            onHoverSignature={(sig, x, y) => {
+            onHoverSignature={(sig: any, x: number, y: number) => {
               if (sig) {
                 setHoveredSig({ sig, x, y });
               } else {
