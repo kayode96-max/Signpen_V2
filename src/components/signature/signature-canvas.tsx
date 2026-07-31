@@ -77,7 +77,7 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
         // If there is text, draw it on top
         if (textElement && textElement.text) {
           const dpr = window.devicePixelRatio || 1;
-          const fontSize = (16 + size * 4) * dpr;
+          const fontSize = (tool === 'text' ? size : (16 + size * 4)) * dpr;
           const fontFamily = getFontFamily(font);
 
           tempCtx.font = `${fontSize}px ${fontFamily}`;
@@ -264,12 +264,16 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
                             onBlur={() => setTextElement(prev => prev ? ({...prev, isEditing: false}) : null)}
                             onKeyDown={(e) => { if(e.key === 'Enter') setTextElement(prev => prev ? ({...prev, isEditing: false}) : null) }}
                             className={cn("bg-transparent outline-none border-dashed border-gray-400 border", font)}
-                            style={{ color: color, fontSize: `${16 + size * 4}px`, width: `${(textElement.text.length + 1) * (16 + size * 2)}px` }}
+                            style={{ 
+                              color: color, 
+                              fontSize: `${tool === 'text' ? size : (16 + size * 4)}px`, 
+                              width: `${(textElement.text.length + 1) * (tool === 'text' ? size * 0.7 : (16 + size * 2))}px` 
+                            }}
                         />
                     ) : (
                         <span
                             className={cn("whitespace-nowrap select-none", font)}
-                            style={{ color: color, fontSize: `${16 + size * 4}px` }}
+                            style={{ color: color, fontSize: `${tool === 'text' ? size : (16 + size * 4)}px` }}
                              onClick={() => setTextElement(prev => prev ? ({...prev, isEditing: true}) : null)}
                         >
                             {textElement.text}
