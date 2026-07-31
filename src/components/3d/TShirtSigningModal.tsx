@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Dialog,
@@ -105,6 +105,19 @@ export default function TShirtSigningModal({
   const [selectedColor, setSelectedColor] = useState(colors[0]);
   const [selectedFont, setSelectedFont] = useState(fonts[0].className);
   const [selectedSize, setSelectedSize] = useState(4);
+
+  // Synchronise selectedSize range when switching tools
+  useEffect(() => {
+    if (signingTool === 'text') {
+      if (selectedSize < 12 || selectedSize > 60) {
+        setSelectedSize(30); // default text size
+      }
+    } else {
+      if (selectedSize < 1 || selectedSize > 12) {
+        setSelectedSize(4); // default pen size
+      }
+    }
+  }, [signingTool, selectedSize]);
 
   const showToast = (msg: string, ms = 2500) => {
     setToastMsg(msg);
@@ -330,8 +343,17 @@ export default function TShirtSigningModal({
             </div>
 
             <div className="bg-[#1c1c1e] border border-white/10 px-4 py-3 rounded-xl flex items-center gap-3">
-              <span className="text-sm text-white/60 shrink-0">Size:</span>
-              <Slider min={1} max={12} step={1} value={[selectedSize]} onValueChange={(v) => setSelectedSize(v[0])} className="flex-1" />
+              <span className="text-sm text-white/60 shrink-0">
+                Size: {signingTool === 'text' ? `${selectedSize}px` : selectedSize}
+              </span>
+              <Slider 
+                min={signingTool === 'text' ? 12 : 1} 
+                max={signingTool === 'text' ? 60 : 12} 
+                step={1} 
+                value={[selectedSize]} 
+                onValueChange={(v) => setSelectedSize(v[0])} 
+                className="flex-1" 
+              />
             </div>
 
             <div className="h-56 rounded-2xl border-2 border-white/10 bg-white shadow-inner overflow-hidden relative">
