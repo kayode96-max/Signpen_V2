@@ -56,6 +56,8 @@ export interface ExistingSignature {
 interface TShirtCanvasProps {
   /** Called whenever the user clicks on the shirt surface; receives normalised UV {x, y} */
   onShirtClick?: (uv: { x: number; y: number }) => void;
+  /** Called when the user clicks on an existing signature */
+  onExistingSignatureClick?: () => void;
   /** Called when hovering over a signature */
   onHoverSignature?: (sig: ExistingSignature | null, x: number, y: number) => void;
   /** Pre-existing signatures to bake in on load */
@@ -82,7 +84,7 @@ const toUvFromPercentPosition = (
 
 // ─── Component ──────────────────────────────────────────────────────────────
 const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
-  ({ onShirtClick, onHoverSignature, existingSignatures, readOnly = false, className }, ref) => {
+  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
 
     // Three.js objects kept in refs so they don't cause re-renders
@@ -566,11 +568,29 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
         const meshes = shirtMeshesRef.current.length > 0 ? shirtMeshesRef.current : (shirtMesh ? [shirtMesh] : []);
         const hits = raycasterRef.current.intersectObjects(meshes, false);
         if (hits.length > 0 && hits[0].uv) {
-          const uv = { x: hits[0].uv.x, y: hits[0].uv.y };
-          onShirtClick?.(uv);
+          const hitUV = hits[0].uv;
+          const w = 340 / TEX_W / 2;
+          const h = 140 / TEX_H / 2;
+          let clickedExisting = false;
+          
+          for (const sig of existingSignaturesRef.current || []) {
+            const sigUv = toUvFromPercentPosition(sig.position);
+            if (!sigUv) continue;
+            if (Math.abs(hitUV.x - sigUv.x) < w && Math.abs(hitUV.y - sigUv.y) < h) {
+              clickedExisting = true;
+              break;
+            }
+          }
+
+          if (clickedExisting) {
+            onExistingSignatureClick?.();
+          } else {
+            const uv = { x: hitUV.x, y: hitUV.y };
+            onShirtClick?.(uv);
+          }
         }
       },
-      [onShirtClick, readOnly]
+      [onShirtClick, onExistingSignatureClick, readOnly]
     );
 
     return (

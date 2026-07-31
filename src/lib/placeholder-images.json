@@ -3,7 +3,7 @@
     {
       "id": "feature-canvas",
       "description": "An image representing an interactive, zoomable canvas with digital signatures.",
-      "imageUrl": "/images/interactive.png",
+      "imageUrl": "/images/interactive.svg",  
       "imageHint": "interactive canvas"
     },
     {
