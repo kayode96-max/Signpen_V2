@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -365,9 +366,9 @@ export default function TShirtSigningModal({
               Spot Taken
             </DialogTitle>
           </DialogHeader>
-          <div className="py-6 text-sm text-white/80">
+          <DialogDescription className="py-6 text-sm text-white/80 block">
             This spot has already been taken by another signature. Please choose another spot on the shirt!
-          </div>
+          </DialogDescription>
           <DialogFooter className="pt-2 border-t border-white/5">
             <Button 
               onClick={() => setShowSpotTakenError(false)} 
