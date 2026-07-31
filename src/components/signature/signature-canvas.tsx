@@ -45,9 +45,15 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
     const [textElement, setTextElement] = useState<TextElement | null>(null);
 
     const getFontFamily = (fontClass: string) => {
-        if (fontClass === 'font-unifraktur-maguntia') return 'UnifrakturMaguntia';
-        // A more robust way to derive font family name from tailwind class
         const name = fontClass.replace('font-', '');
+        if (typeof window !== 'undefined') {
+            const styles = getComputedStyle(document.documentElement);
+            const resolved = styles.getPropertyValue(`--font-${name}`).trim();
+            if (resolved) {
+                return resolved;
+            }
+        }
+        if (fontClass === 'font-unifraktur-maguntia') return 'UnifrakturMaguntia';
         return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
     }
 
@@ -70,15 +76,15 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
 
         // If there is text, draw it on top
         if (textElement && textElement.text) {
-          const fontSize = 12 + size * 2;
+          const dpr = window.devicePixelRatio || 1;
+          const fontSize = (16 + size * 4) * dpr;
           const fontFamily = getFontFamily(font);
 
-          tempCtx.font = `${fontSize}px "${fontFamily}"`;
+          tempCtx.font = `${fontSize}px ${fontFamily}`;
           tempCtx.fillStyle = color;
           tempCtx.textBaseline = "top";
           
-          const dpr = window.devicePixelRatio || 1;
-          tempCtx.fillText(textElement.text, textElement.x / dpr, textElement.y / dpr);
+          tempCtx.fillText(textElement.text, textElement.x * dpr, textElement.y * dpr);
         }
         
         return tempCanvas.toDataURL("image/png");
@@ -195,12 +201,11 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
         // If there's no text element, create one.
         if (!textElement) {
             const { x, y } = getCoords(e.nativeEvent);
-            const dpr = window.devicePixelRatio || 1;
             const newTextElement: TextElement = {
                 id: Date.now(),
                 text: "Your text here",
-                x: x * dpr,
-                y: y * dpr,
+                x: x,
+                y: y,
                 isEditing: true,
                 ref: React.createRef()
             };
@@ -259,12 +264,12 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
                             onBlur={() => setTextElement(prev => prev ? ({...prev, isEditing: false}) : null)}
                             onKeyDown={(e) => { if(e.key === 'Enter') setTextElement(prev => prev ? ({...prev, isEditing: false}) : null) }}
                             className={cn("bg-transparent outline-none border-dashed border-gray-400 border", font)}
-                            style={{ color: color, fontSize: `${12 + size * 2}px`, width: `${(textElement.text.length + 1) * (12 + size)}px` }}
+                            style={{ color: color, fontSize: `${16 + size * 4}px`, width: `${(textElement.text.length + 1) * (16 + size * 2)}px` }}
                         />
                     ) : (
                         <span
                             className={cn("whitespace-nowrap select-none", font)}
-                            style={{ color: color, fontSize: `${12 + size * 2}px` }}
+                            style={{ color: color, fontSize: `${16 + size * 4}px` }}
                              onClick={() => setTextElement(prev => prev ? ({...prev, isEditing: true}) : null)}
                         >
                             {textElement.text}

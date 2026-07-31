@@ -47,14 +47,26 @@ const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
 
 const colors = ['#000000', '#EF4444', '#3B82F6', '#22C55E', '#A855F7', '#EAB308'];
 const fonts = [
+  { name: 'Alex Brush', className: 'font-alex-brush' },
+  { name: 'Allura', className: 'font-allura' },
   { name: 'Caveat', className: 'font-caveat' },
+  { name: 'Cedarville Cursive', className: 'font-cedarville-cursive' },
+  { name: 'Cookie', className: 'font-cookie' },
   { name: 'Dancing Script', className: 'font-dancing-script' },
   { name: 'Great Vibes', className: 'font-great-vibes' },
   { name: 'Indie Flower', className: 'font-indie-flower' },
+  { name: 'Italianno', className: 'font-italianno' },
+  { name: 'Kaushan Script', className: 'font-kaushan-script' },
+  { name: 'Marck Script', className: 'font-marck-script' },
   { name: 'Monsieur La Doulaise', className: 'font-monsieur-la-doulaise' },
+  { name: 'Nothing You Could Do', className: 'font-nothing-you-could-do' },
   { name: 'Pacifico', className: 'font-pacifico' },
+  { name: 'Parisienne', className: 'font-parisienne' },
   { name: 'Sacramento', className: 'font-sacramento' },
+  { name: 'Satisfy', className: 'font-satisfy' },
+  { name: 'Tangerine', className: 'font-tangerine' },
   { name: 'Unifraktur', className: 'font-unifraktur-maguntia' },
+  { name: 'Yellowtail', className: 'font-yellowtail' },
 ];
 
 export interface SignaturePlacementPayload {
@@ -86,6 +98,7 @@ export default function TShirtSigningModal({
   const [isSaving, setIsSaving] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [pendingPlacement, setPendingPlacement] = useState<SignaturePlacementPayload | null>(null);
+  const [showSpotTakenError, setShowSpotTakenError] = useState(false);
 
   const [signingTool, setSigningTool] = useState<'pen' | 'text'>('pen');
   const [selectedColor, setSelectedColor] = useState(colors[0]);
@@ -206,6 +219,7 @@ export default function TShirtSigningModal({
               <TShirtCanvas
                 ref={shirtRef}
                 onShirtClick={handleShirtClick}
+                onExistingSignatureClick={() => setShowSpotTakenError(true)}
                 existingSignatures={existingSignatures}
                 className="w-full h-full"
               />
@@ -337,6 +351,31 @@ export default function TShirtSigningModal({
               <CheckCircle2 className="h-4 w-4 mr-1.5" /> Place on Shirt
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Spot Taken Error Modal */}
+      <Dialog open={showSpotTakenError} onOpenChange={setShowSpotTakenError}>
+        <DialogContent 
+          overlayClassName="z-[9998]"
+          className="sm:max-w-[400px] bg-[#121212] border border-white/10 text-white rounded-[2rem] shadow-2xl z-[9999]"
+        >
+          <DialogHeader className="pb-2 border-b border-white/5">
+            <DialogTitle className="text-xl font-bold font-headline text-red-500 flex items-center gap-2">
+              Spot Taken
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-6 text-sm text-white/80">
+            This spot has already been taken by another signature. Please choose another spot on the shirt!
+          </div>
+          <DialogFooter className="pt-2 border-t border-white/5">
+            <Button 
+              onClick={() => setShowSpotTakenError(false)} 
+              className="bg-white text-black hover:bg-gray-200 rounded-full px-6 transition-all font-medium w-full sm:w-auto"
+            >
+              Okay
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
