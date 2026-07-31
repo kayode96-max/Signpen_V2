@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { notFound, useParams } from "next/navigation";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogFooter, DialogClose,
+  DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import InstructionDialog from "./instruction-dialog";
 import dynamic from "next/dynamic";
@@ -275,6 +275,9 @@ export default function PublicSignOutPage() {
         <DialogContent className="sm:max-w-sm bg-[#121212] border border-white/10 text-white rounded-[2rem] shadow-2xl">
           <DialogHeader className="pb-2 border-b border-white/5">
             <DialogTitle className="text-xl font-semibold tracking-tight">Before you sign</DialogTitle>
+            <DialogDescription className="text-sm text-white/60">
+              Please enter your name and a short message.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
