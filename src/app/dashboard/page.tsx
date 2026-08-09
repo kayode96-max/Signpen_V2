@@ -13,7 +13,8 @@ import {
   query,
   doc
 } from '@/supabase';
-import { Loader2, Image as ImageIcon, FileText, Download } from 'lucide-react';
+import { Loader2, Image as ImageIcon, FileText, Download, Sparkles, X } from 'lucide-react';
+import Link from 'next/link';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +48,17 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isDownloading, setIsDownloading] = useState(false);
   const [hoveredSig, setHoveredSig] = useState<{ sig: ExistingSignature, x: number, y: number } | null>(null);
+  const [showBanner, setShowBanner] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hide_customization_banner') !== 'true';
+    }
+    return true;
+  });
+
+  const handleDismissBanner = () => {
+    localStorage.setItem('hide_customization_banner', 'true');
+    setShowBanner(false);
+  };
 
   const studentDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'students', user.uid) : null),
@@ -155,10 +167,36 @@ export default function DashboardPage() {
     <div className="h-[100dvh] w-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 absolute inset-0 pt-16 overflow-hidden">
       
       {/* Header section */}
-      <div className="w-full max-w-7xl mx-auto pt-4 px-8 shrink-0 z-10 relative pointer-events-none">
+      <div className="w-full max-w-7xl mx-auto pt-4 px-8 shrink-0 z-10 relative pointer-events-none flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white text-center md:text-left pointer-events-auto drop-shadow-lg">
           Take a closer look.
         </h1>
+        {showBanner && (
+          <div className="pointer-events-auto bg-[#1c1c1e]/90 border border-white/10 backdrop-blur-md rounded-2xl p-4 flex items-center justify-between gap-4 max-w-md shadow-2xl relative">
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles className="h-4 w-4 text-yellow-400" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-white">Customize Your Signing Page!</p>
+                <p className="text-xs text-zinc-400">
+                  Go to{" "}
+                  <Link href="/dashboard/settings#customize" className="text-white underline font-semibold hover:text-gray-300">
+                    Settings
+                  </Link>{" "}
+                  to change your headings, theme, and thank-you message.
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={handleDismissBanner} 
+              className="text-zinc-500 hover:text-white transition-colors"
+              aria-label="Dismiss banner"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Board section with Spotlight effect */}

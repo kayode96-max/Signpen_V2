@@ -70,11 +70,6 @@ export default function CreateProfile({ user }: { user: User }) {
     const studentDocRef = doc(firestore, 'students', user.uid);
     setDocumentNonBlocking(studentDocRef, newStudent, { merge: false });
 
-    toast({
-      title: 'Profile Created!',
-      description: 'Your sign-out page is ready. Welcome to SignPen!',
-    });
-
     // No need to set isloading to false, we are navigating away
     // We don't wait for the doc to be written, onSnapshot will pick it up
     // The dashboard will re-render automatically.
