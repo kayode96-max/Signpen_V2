@@ -40,16 +40,19 @@ const NavBar = () => {
 
         {/* Middle Side: Navigation Links */}
         <ul className='hidden md:flex items-center gap-4'>
-          {middleLinks.map(({ label }) => (
-            <li key={label}>
-              <Link 
-                href={`/#${label.toLowerCase()}`} 
-                className='block rounded-full px-5 py-2 text-white/80 font-medium text-sm cursor-pointer hover:bg-white/10 hover:text-white transition-all duration-300 ease-in-out bg-[#1c1c1e] border border-white/10 shadow-sm'
-              >
-                {label}
-              </Link>
-            </li>
-          ))}
+          {middleLinks.map(({ label, href }) => {
+            const destination = label.toLowerCase() === 'contact' ? '/contact' : (href || `/#${label.toLowerCase()}`);
+            return (
+              <li key={label}>
+                <Link 
+                  href={destination} 
+                  className='block rounded-full px-5 py-2 text-white/80 font-medium text-sm cursor-pointer hover:bg-white/10 hover:text-white transition-all duration-300 ease-in-out bg-[#1c1c1e] border border-white/10 shadow-sm'
+                >
+                  {label}
+                </Link>
+              </li>
+            );
+          })}
           {user && (
             <>
               <li>
@@ -62,7 +65,7 @@ const NavBar = () => {
               </li>
               <li>
                 <Link 
-                  href="/dashboard/customize" 
+                  href="/dashboard/settings#customize" 
                   className='block rounded-full px-5 py-2 text-white/80 font-medium text-sm cursor-pointer hover:bg-white/10 hover:text-white transition-all duration-300 ease-in-out bg-[#1c1c1e] border border-white/10 shadow-sm'
                 >
                   Customize
