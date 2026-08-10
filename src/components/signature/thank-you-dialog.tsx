@@ -19,7 +19,7 @@ interface ThankYouDialogProps {
 export default function ThankYouDialog({ open, onOpenChange, student }: ThankYouDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px] text-center bg-[#121212] border border-white/10 text-white rounded-[2rem] shadow-2xl overflow-hidden p-8">
+      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[425px] text-center bg-[#121212] border border-white/10 text-white rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl overflow-hidden p-6 sm:p-8">
         {open && <Confetti />}
         <DialogHeader>
           <DialogTitle className="text-3xl font-headline mx-auto tracking-tight">

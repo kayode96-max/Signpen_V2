@@ -285,14 +285,14 @@ export default function PublicSignOutPage() {
 
       {/* Name + Note dialog */}
       <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
-        <DialogContent className="sm:max-w-sm bg-[#121212] border border-white/10 text-white rounded-[2rem] shadow-2xl">
-          <DialogHeader className="pb-2 border-b border-white/5">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm max-h-[85vh] sm:max-h-[90vh] flex flex-col gap-0 bg-[#121212] border border-white/10 text-white rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl p-4 sm:p-6 overflow-hidden">
+          <DialogHeader className="pb-4 border-b border-white/5 flex-shrink-0">
             <DialogTitle className="text-xl font-semibold tracking-tight">Before you sign</DialogTitle>
             <DialogDescription className="text-sm text-white/60">
               Please enter your name and a short message.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 overflow-y-auto flex-grow pr-1">
             <div className="space-y-2">
               <Label className="text-white/70">Your Name</Label>
               <Input 
@@ -312,7 +312,7 @@ export default function PublicSignOutPage() {
               />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-white/5">
+          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-white/5 flex-shrink-0 flex flex-col sm:flex-row justify-end">
             <DialogClose asChild>
                 <Button variant="ghost" className="text-white hover:bg-white/10 hover:text-white rounded-full">Cancel</Button>
             </DialogClose>
