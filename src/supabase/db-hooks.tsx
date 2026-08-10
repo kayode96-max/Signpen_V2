@@ -110,6 +110,17 @@ export function useDoc<T = any>(
 
     fetchDoc();
 
+    const handleLocalWrite = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.table === parsed.table && detail.id === parsed.id) {
+        fetchDoc();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('supabase-write', handleLocalWrite);
+    }
+
     const channel = supabase
       .channel(`doc-${parsed.table}-${parsed.id}`)
       .on(
@@ -131,6 +142,9 @@ export function useDoc<T = any>(
       .subscribe();
 
     return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('supabase-write', handleLocalWrite);
+      }
       supabase.removeChannel(channel);
     };
   }, [docRef?.path]);
@@ -179,6 +193,17 @@ export function useCollection<T = any>(
 
     fetchCollection();
 
+    const handleLocalWrite = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.table === parsed.table) {
+        fetchCollection();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('supabase-write', handleLocalWrite);
+    }
+
     const channel = supabase
       .channel(`col-${parsed.table}-${parsed.studentId || 'all'}`)
       .on(
@@ -196,6 +221,9 @@ export function useCollection<T = any>(
       .subscribe();
 
     return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('supabase-write', handleLocalWrite);
+      }
       supabase.removeChannel(channel);
     };
   }, [targetRefOrQuery?.path]);
@@ -207,6 +235,7 @@ export function setDocumentNonBlocking(docRef: MockRef, data: any, options?: { m
   const parsed = parsePath(docRef.path);
   
   const execute = async () => {
+    let success = false;
     if (parsed.table === 'students') {
       const payload = {
         id: parsed.id,
@@ -223,19 +252,29 @@ export function setDocumentNonBlocking(docRef: MockRef, data: any, options?: { m
       if (options?.merge) {
         const { error } = await supabase.from('students').update(payload).eq('id', parsed.id);
         if (error) console.error("Error setting document:", error);
+        else success = true;
       } else {
         const { error } = await supabase.from('students').upsert(payload);
         if (error) console.error("Error setting document:", error);
+        else success = true;
       }
     } else {
       const payload = { id: parsed.id, ...data };
       if (options?.merge) {
         const { error } = await supabase.from(parsed.table).update(data).eq(parsed.keyField || 'id', parsed.id);
         if (error) console.error("Error setting document:", error);
+        else success = true;
       } else {
         const { error } = await supabase.from(parsed.table).upsert(payload);
         if (error) console.error("Error setting document:", error);
+        else success = true;
       }
+    }
+
+    if (success && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('supabase-write', {
+        detail: { table: parsed.table, id: parsed.id, path: docRef.path }
+      }));
     }
   };
 
@@ -250,7 +289,15 @@ export function updateDocumentNonBlocking(docRef: MockRef, data: any) {
       .from(parsed.table)
       .update(data)
       .eq(parsed.keyField || 'id', parsed.id);
-    if (error) console.error("Error updating document:", error);
+    if (error) {
+      console.error("Error updating document:", error);
+    } else {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('supabase-write', {
+          detail: { table: parsed.table, id: parsed.id, path: docRef.path }
+        }));
+      }
+    }
   };
 
   execute();
@@ -269,6 +316,13 @@ export function addDocumentNonBlocking(colRef: MockRef, data: any) {
       console.error("Error adding document:", error);
       throw error;
     }
+    
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('supabase-write', {
+        detail: { table: parsed.table, studentId: data.studentId, path: colRef.path }
+      }));
+    }
+
     return { id: inserted.id };
   };
 
@@ -283,7 +337,15 @@ export function deleteDocumentNonBlocking(docRef: MockRef) {
       .from(parsed.table)
       .delete()
       .eq(parsed.keyField || 'id', parsed.id);
-    if (error) console.error("Error deleting document:", error);
+    if (error) {
+      console.error("Error deleting document:", error);
+    } else {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('supabase-write', {
+          detail: { table: parsed.table, id: parsed.id, path: docRef.path }
+        }));
+      }
+    }
   };
 
   execute();

@@ -102,14 +102,17 @@ export default function DashboardPage() {
   useEffect(() => {
     if (isUserLoading || isStudentLoading) return;
     if (user && !student && studentDocRef) {
+      const signupName = typeof window !== 'undefined' ? localStorage.getItem('signup_name') : null;
+      const finalName = signupName || user.displayName || user.email?.split('@')[0] || 'Student';
+
       const defaultStudent: Student = {
         id: user.uid,
-        name: user.displayName || user.email?.split('@')[0] || 'Student',
+        name: finalName,
         email: user.email || '',
         profilePhotoUrl: user.photoURL || '',
         pageSettings: {
           theme: 'light',
-          pageHeading: `${user.displayName || user.email?.split('@')[0] || 'My'}'s Sign-Off`,
+          pageHeading: `${finalName}'s Sign-Off`,
           pageSubheading: `Sign My Final Year Board 🎓✨`,
           backgroundImageUrl: '',
         },
@@ -119,6 +122,10 @@ export default function DashboardPage() {
         },
       };
       setDocumentNonBlocking(studentDocRef, defaultStudent, { merge: false });
+
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('signup_name');
+      }
     }
   }, [user, student, isUserLoading, isStudentLoading, studentDocRef]);
 
