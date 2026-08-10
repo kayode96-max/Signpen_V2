@@ -76,6 +76,9 @@ export default function AuthForm() {
   const handleSignup = async (data: z.infer<typeof signupSchema>) => {
     setIsLoading(true);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('signup_name', data.name);
+      }
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       await updateProfile(userCredential.user, { displayName: data.name });
       

@@ -46,7 +46,7 @@ export default function UserNav({ user, onSignOut }: UserNavProps) {
           <Link href="/dashboard/settings">Settings</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="hover:bg-white/10 focus:bg-white/10 focus:text-white rounded-xl px-3 py-2 cursor-pointer transition-colors">
-          <Link href="/dashboard/customize">Customize</Link>
+          <Link href="/dashboard/settings#customize">Customize</Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10 my-1" />
         <DropdownMenuItem 

@@ -1,6 +1,5 @@
 'use client';
 
-import CreateProfile from '@/components/dashboard/create-profile';
 import SentimentSummary from '@/components/dashboard/sentiment-summary';
 import ShareLink from '@/components/dashboard/share-link';
 import {
@@ -11,18 +10,30 @@ import {
   useDoc,
   collection,
   query,
-  doc
+  doc,
+  setDocumentNonBlocking
 } from '@/supabase';
-import { Loader2, Image as ImageIcon, FileText, Download } from 'lucide-react';
+import { Loader2, Image as ImageIcon, FileText, Download, Sparkles, X, ArrowRight, Pencil, CheckCircle } from 'lucide-react';
+import Link from 'next/link';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useRef, useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import type { Signature } from '@/lib/types';
+import type { Signature, Student } from '@/lib/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import 'noto-color-emoji';
@@ -47,6 +58,26 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isDownloading, setIsDownloading] = useState(false);
   const [hoveredSig, setHoveredSig] = useState<{ sig: ExistingSignature, x: number, y: number } | null>(null);
+  const [showBanner, setShowBanner] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hide_customization_banner') !== 'true';
+    }
+    return true;
+  });
+
+  const handleDismissBanner = () => {
+    localStorage.setItem('hide_customization_banner', 'true');
+    setShowBanner(false);
+  };
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const handleDismissOnboarding = () => {
+    if (user) {
+      localStorage.setItem(`onboarding_shown_${user.uid}`, 'true');
+    }
+    setShowOnboarding(false);
+  };
 
   const studentDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'students', user.uid) : null),
@@ -57,7 +88,46 @@ export default function DashboardPage() {
     data: student,
     isLoading: isStudentLoading,
     error: studentError,
-  } = useDoc(studentDocRef);
+  } = useDoc<Student>(studentDocRef);
+
+  useEffect(() => {
+    if (user) {
+      const key = `onboarding_shown_${user.uid}`;
+      if (localStorage.getItem(key) !== 'true') {
+        setShowOnboarding(true);
+      }
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (isUserLoading || isStudentLoading) return;
+    if (user && !student && studentDocRef) {
+      const signupName = typeof window !== 'undefined' ? localStorage.getItem('signup_name') : null;
+      const finalName = signupName || user.displayName || user.email?.split('@')[0] || 'Student';
+
+      const defaultStudent: Student = {
+        id: user.uid,
+        name: finalName,
+        email: user.email || '',
+        profilePhotoUrl: user.photoURL || '',
+        pageSettings: {
+          theme: 'light',
+          pageHeading: `${finalName}'s Sign-Off`,
+          pageSubheading: `Sign My Final Year Board 🎓✨`,
+          backgroundImageUrl: '',
+        },
+        popupMessageConfig: {
+          title: 'Thank You So Much ❤️',
+          message: 'Your message means the world to me. Thank you for being a part of my journey!',
+        },
+      };
+      setDocumentNonBlocking(studentDocRef, defaultStudent, { merge: false });
+
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('signup_name');
+      }
+    }
+  }, [user, student, isUserLoading, isStudentLoading, studentDocRef]);
 
   const signaturesQuery = useMemoFirebase(
     () =>
@@ -141,9 +211,6 @@ export default function DashboardPage() {
   }
 
   if (!student) {
-    if (user) {
-      return <CreateProfile user={user} />;
-    }
     return (
       <div className="flex items-center justify-center min-h-screen bg-black -mx-4 md:-mx-6 -mt-24 pt-24">
         <Loader2 className="h-8 w-8 animate-spin text-white" />
@@ -155,10 +222,36 @@ export default function DashboardPage() {
     <div className="h-[100dvh] w-screen bg-black text-white font-sans flex flex-col selection:bg-white/20 absolute inset-0 pt-16 overflow-hidden">
       
       {/* Header section */}
-      <div className="w-full max-w-7xl mx-auto pt-4 px-8 shrink-0 z-10 relative pointer-events-none">
+      <div className="w-full max-w-7xl mx-auto pt-4 px-8 shrink-0 z-10 relative pointer-events-none flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-white text-center md:text-left pointer-events-auto drop-shadow-lg">
           Take a closer look.
         </h1>
+        {showBanner && (
+          <div className="pointer-events-auto bg-[#1c1c1e]/90 border border-white/10 backdrop-blur-md rounded-2xl p-4 flex items-center justify-between gap-4 max-w-md shadow-2xl relative">
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles className="h-4 w-4 text-yellow-400" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-white">Customize Your Signing Page!</p>
+                <p className="text-xs text-zinc-400">
+                  Go to{" "}
+                  <Link href="/dashboard/settings#customize" className="text-white underline font-semibold hover:text-gray-300">
+                    Settings
+                  </Link>{" "}
+                  to change your headings, theme, and thank-you message.
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={handleDismissBanner} 
+              className="text-zinc-500 hover:text-white transition-colors"
+              aria-label="Dismiss banner"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Board section with Spotlight effect */}
@@ -237,6 +330,73 @@ export default function DashboardPage() {
           )}
         </div>
       )}
+
+      {/* Onboarding Dialog Modal */}
+      <Dialog open={showOnboarding} onOpenChange={(v) => { if (!v) handleDismissOnboarding(); }}>
+        <DialogContent className="sm:max-w-lg bg-[#121212] border border-white/10 text-white rounded-[2rem] shadow-2xl p-6">
+          <DialogHeader className="pb-4 border-b border-white/5">
+            <DialogTitle className="text-3xl font-headline tracking-tight text-white flex items-center gap-2">
+              <Sparkles className="h-7 w-7 text-yellow-400 animate-pulse" />
+              Welcome to SignPen!
+            </DialogTitle>
+            <DialogDescription className="text-white/60 text-base mt-2">
+              Your digital signature board has been created successfully. Here's how to get started:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                <Pencil className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-white/95">1. Customize Your Signing Page</h3>
+                <p className="text-sm text-white/60 mt-1">
+                  Upload a background photo, toggle dark mode, customize the page headings, and personalize the thank-you card message shown to your friends.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                <ArrowRight className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-white/95">2. Share Your Link</h3>
+                <p className="text-sm text-white/60 mt-1">
+                  Copy your unique board link from the dashboard and send it to your classmates, teachers, or friends so they can sign.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                <CheckCircle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-white/95">3. Download the Keepsake</h3>
+                <p className="text-sm text-white/60 mt-1">
+                  Once everyone has signed, download your fully completed 3D signature board as a PNG image or a PDF memory card.
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="pt-4 border-t border-white/5 flex flex-col sm:flex-row gap-3">
+            <DialogClose asChild>
+              <Button 
+                variant="ghost" 
+                className="text-white hover:bg-white/10 hover:text-white rounded-full w-full sm:w-auto animate-none hover:animate-none"
+              >
+                Go to Dashboard
+              </Button>
+            </DialogClose>
+            <Link href="/dashboard/settings#customize" onClick={handleDismissOnboarding} className="w-full sm:w-auto">
+              <Button className="bg-white text-black hover:bg-gray-200 rounded-full px-6 transition-all font-medium w-full">
+                Customize Page Now
+              </Button>
+            </Link>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

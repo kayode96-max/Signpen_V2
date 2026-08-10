@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ThankYouDialog from "./thank-you-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2, Info } from "lucide-react";
+import { Loader2, Info, MessageSquare } from "lucide-react";
 import { useDoc, useCollection, doc, collection, query, getDoc, signInAnonymously, initializeFirebase } from "@/supabase";
 import { useToast } from "@/hooks/use-toast";
+import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -225,6 +226,17 @@ export default function PublicSignOutPage() {
   return (
     <div className="absolute inset-0 bg-black text-white font-sans overflow-hidden px-4 md:px-8 selection:bg-white/20 flex flex-col z-0 h-[100dvh]">
       <InstructionDialog open={showInstructionDialog} onOpenChange={setShowInstructionDialog} />
+
+      {/* Contact & Feedback Button */}
+      <div className="absolute top-4 right-4 z-50 pointer-events-auto">
+        <Link 
+          href="/contact" 
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1c1c1e]/90 hover:bg-white/10 border border-white/10 text-xs md:text-sm text-white transition-all font-medium backdrop-blur-md shadow-lg"
+        >
+          <MessageSquare className="h-4 w-4 text-white/70" />
+          Contact & Feedback
+        </Link>
+      </div>
 
       {student.pageSettings.backgroundImageUrl && (
         <div className="absolute inset-0 z-0 opacity-15">

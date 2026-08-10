@@ -1,7 +1,6 @@
 export const NavLinks = [
-    { label: "Waitlist" },
-    { label: "About" },
-    { label: "Contact" },
+    { label: "About", href: "/#about" },
+    { label: "Contact", href: "/contact" },
     { label: "Login" },
     { label: "Sign Up" },
 ]
