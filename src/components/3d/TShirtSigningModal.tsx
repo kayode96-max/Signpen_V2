@@ -167,7 +167,7 @@ export default function TShirtSigningModal({
 
     setDrawOpen(false);
     setPendingUV(null);
-    showToast('Signature placed! Click Done to save.');
+    toast({ title: 'Signature placed! Click Done to save.' });
   }, [pendingUV, dataUrlToCanvas, toast]);
 
   const handleCancelDraw = useCallback(() => {
