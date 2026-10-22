@@ -7,9 +7,10 @@ import {
   buildSentimentPrompt,
   interpretSentimentQuota,
   notesFromRows,
-  SENTIMENT_CALLS_PER_BOARD_PER_DAY,
+  SENTIMENT_QUOTA_MESSAGE,
+  SENTIMENT_UNAVAILABLE_MESSAGE,
 } from '@/lib/server/sentiment';
-import { createServiceClient, MissingServerConfigError } from '@/lib/server/supabase';
+import { createServiceClient } from '@/lib/server/supabase';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,9 +18,17 @@ export const dynamic = 'force-dynamic';
 /**
  * Board owners only. Notes are loaded from that owner's signatures.
  * The request body cannot supply the text sent to Gemini.
- * Quota: SENTIMENT_CALLS_PER_BOARD_PER_DAY per board, reset at 00:00 UTC.
- * A call is counted before Gemini runs so a failing key cannot be retried without limit.
+ * Quota: 5 calls per board per UTC day. A call is counted before the
+ * provider runs so a failing key cannot be retried without limit.
+ * Provider and config failures are logged here and returned as a fixed 503.
  */
+function unavailable(detail: string) {
+  const secret = process.env.GOOGLE_API_KEY;
+  const safe = secret ? detail.split(secret).join('[redacted]') : detail;
+  console.error('sentiment-summary:', safe);
+  return NextResponse.json({ error: SENTIMENT_UNAVAILABLE_MESSAGE }, { status: 503 });
+}
+
 export async function POST(req: NextRequest) {
   let raw: unknown = {};
   const text = await req.text();
@@ -37,7 +46,12 @@ export async function POST(req: NextRequest) {
   }
 
   const session = await requireRequestUser(req);
-  if (!session.ok) return session.response;
+  if (!session.ok) {
+    if (session.response.status === 503) {
+      return unavailable('session client is not configured');
+    }
+    return session.response;
+  }
 
   const access = requireOwnBoard(session.user, parsed.data.studentId);
   if (!access.ok) {
@@ -46,20 +60,15 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
-    return NextResponse.json(
-      { error: 'GOOGLE_API_KEY is not configured on the server.' },
-      { status: 503 }
-    );
+    return unavailable('GOOGLE_API_KEY is not configured');
   }
 
   let model: string;
   try {
     model = assertGeminiModel(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
-  } catch {
-    return NextResponse.json(
-      { error: 'GEMINI_MODEL is not a supported model name.' },
-      { status: 503 }
-    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'GEMINI_MODEL is invalid';
+    return unavailable(detail);
   }
 
   try {
@@ -71,8 +80,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (studentError) {
-      console.error('Failed to load board for sentiment:', studentError.code);
-      return NextResponse.json({ error: 'Failed to load your board.' }, { status: 500 });
+      return unavailable(`failed to load board (${studentError.code ?? 'unknown'})`);
     }
     if (!student) {
       return NextResponse.json({ error: 'This board does not exist.' }, { status: 404 });
@@ -86,8 +94,7 @@ export async function POST(req: NextRequest) {
       .limit(200);
 
     if (notesError) {
-      console.error('Failed to load signature notes:', notesError.code);
-      return NextResponse.json({ error: 'Failed to load signatures.' }, { status: 500 });
+      return unavailable(`failed to load signature notes (${notesError.code ?? 'unknown'})`);
     }
 
     const prompt = buildSentimentPrompt(notesFromRows(rows ?? []));
@@ -103,19 +110,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (quotaError) {
-      console.error('Failed to record sentiment usage:', quotaError.code);
-      return NextResponse.json(
-        { error: 'Failed to record sentiment usage.' },
-        { status: 500 }
-      );
+      return unavailable(`failed to record sentiment usage (${quotaError.code ?? 'unknown'})`);
     }
     if (interpretSentimentQuota(typeof used === 'number' ? used : null) === 'exhausted') {
-      return NextResponse.json(
-        {
-          error: `Sentiment summary is limited to ${SENTIMENT_CALLS_PER_BOARD_PER_DAY} calls per board per day.`,
-        },
-        { status: 429 }
-      );
+      return NextResponse.json({ error: SENTIMENT_QUOTA_MESSAGE }, { status: 429 });
     }
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -129,31 +127,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      console.error('Gemini API call failed with status', response.status);
-      return NextResponse.json(
-        { error: 'Failed to generate sentiment summary from Google Gemini.' },
-        { status: 502 }
-      );
+      return unavailable(`provider request failed with status ${response.status}`);
     }
 
     const payload = await response.json();
     const summary = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!summary) {
-      return NextResponse.json(
-        { error: 'Gemini returned an empty summary response.' },
-        { status: 502 }
-      );
+      return unavailable('provider returned an empty summary');
     }
 
     return NextResponse.json({ sentimentSummary: summary });
   } catch (err) {
-    if (err instanceof MissingServerConfigError) {
-      return NextResponse.json({ error: err.message }, { status: 503 });
-    }
-    console.error('Error in sentiment summary handler.');
-    return NextResponse.json(
-      { error: 'Sentiment service is currently unavailable.' },
-      { status: 502 }
-    );
+    const detail = err instanceof Error ? err.message : 'unexpected handler error';
+    return unavailable(detail);
   }
 }

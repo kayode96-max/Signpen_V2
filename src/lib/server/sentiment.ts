@@ -5,6 +5,13 @@ const MODEL_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
 
 export { SENTIMENT_CALLS_PER_BOARD_PER_DAY };
 
+/** Client-facing copy. Do not include provider names, status codes, or env var names. */
+export const SENTIMENT_UNAVAILABLE_MESSAGE =
+  "Couldn't get a summary right now. Please try again in a few minutes.";
+
+export const SENTIMENT_QUOTA_MESSAGE =
+  "You've used today's 5 summaries. You can get more tomorrow.";
+
 /**
  * Prompt built only from signature notes. Names, emails, images, and user ids
  * are not accepted by this function, so they cannot be forwarded to Gemini.
