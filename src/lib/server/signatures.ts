@@ -36,6 +36,8 @@ export interface SignatureWriteContext {
 export interface ApiBody {
   status: number;
   body: { error?: string; signature_id?: string };
+  /** Present on success so the route can invalidate the board cache. Not returned to the client. */
+  boardId?: string;
 }
 
 export const CHALLENGE_REQUIRED = 'challenge_required';
@@ -117,7 +119,7 @@ export async function createSignature(
 
   const first = await write(false);
   if (first.ok) {
-    return { status: 201, body: { signature_id: first.id } };
+    return { status: 201, body: { signature_id: first.id }, boardId: parsed.data.studentId };
   }
   if (!isChallengeRequired(first)) {
     const mapped = mapSignatureWriteError(first);
@@ -145,5 +147,5 @@ export async function createSignature(
     const mapped = mapSignatureWriteError(second);
     return { status: mapped.status, body: { error: mapped.error } };
   }
-  return { status: 201, body: { signature_id: second.id } };
+  return { status: 201, body: { signature_id: second.id }, boardId: parsed.data.studentId };
 }

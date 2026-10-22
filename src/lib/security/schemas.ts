@@ -83,6 +83,38 @@ export const signatureRequestSchema = z.object({
 
 export type SignatureRequest = z.infer<typeof signatureRequestSchema>;
 
+/**
+ * PATCH /api/signatures/[id]. The route decides which keys each actor may send.
+ * Unknown keys are rejected here. An empty object is rejected by the route.
+ */
+export const signaturePatchSchema = z
+  .object({
+    signatoryName: z
+      .string()
+      .trim()
+      .min(1, 'Name is required.')
+      .max(SIGNATORY_NAME_MAX, `Name must be ${SIGNATORY_NAME_MAX} characters or fewer.`)
+      .optional(),
+    signatoryNote: z
+      .string()
+      .trim()
+      .min(1, 'Note is required.')
+      .max(SIGNATORY_NOTE_MAX, `Note must be ${SIGNATORY_NOTE_MAX} characters or fewer.`)
+      .optional(),
+    signatureImageUrl: signatureImageSchema.optional(),
+    position: z
+      .object({
+        x: coordinate('x'),
+        y: coordinate('y'),
+      })
+      .optional(),
+    privateBySigner: z.boolean().optional(),
+    hidden_by_owner: z.boolean().optional(),
+  })
+  .strict();
+
+export type SignaturePatch = z.infer<typeof signaturePatchSchema>;
+
 export const feedbackRequestSchema = z
   .object({
     name: z

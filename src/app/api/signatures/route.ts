@@ -1,4 +1,6 @@
+import { revalidateTag } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
+import { boardCacheTag } from '@/lib/cache/board';
 import { getClientIp } from '@/lib/security/ip-hash';
 import { createSignature, type SignatureWriteArgs, type TurnstileCheck } from '@/lib/server/signatures';
 import { requireRequestUser } from '@/lib/server/session';
@@ -42,6 +44,9 @@ export async function POST(req: NextRequest) {
         return { ok: true as const, id: data };
       },
     });
+    if (result.status === 201 && result.boardId) {
+      revalidateTag(boardCacheTag(result.boardId));
+    }
     return NextResponse.json(result.body, { status: result.status });
   } catch (err) {
     if (err instanceof MissingServerConfigError) {

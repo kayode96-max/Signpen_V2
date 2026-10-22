@@ -56,7 +56,11 @@ describe('createSignature', () => {
       write,
     });
 
-    expect(response).toEqual({ status: 201, body: { signature_id: 'sig-1' } });
+    expect(response).toEqual({
+      status: 201,
+      body: { signature_id: 'sig-1' },
+      boardId: body.studentId,
+    });
     expect(calls).toHaveLength(1);
     const args = calls[0];
     expect(args.p_signer_user_id).toBe('22222222-2222-4222-8222-222222222222');
@@ -129,7 +133,11 @@ describe('createSignature', () => {
       { userId: 'u', ip: IP, salt: SALT, write: limited.write, verifyTurnstile }
     );
 
-    expect(response).toEqual({ status: 201, body: { signature_id: 'sig-passed' } });
+    expect(response).toEqual({
+      status: 201,
+      body: { signature_id: 'sig-passed' },
+      boardId: body.studentId,
+    });
     expect(limited.calls.map((call) => call.p_challenge_passed)).toEqual([false, true]);
     expect(JSON.stringify(limited.calls)).not.toContain('token-from-widget');
     expect(JSON.stringify(limited.calls)).not.toContain(IP);
