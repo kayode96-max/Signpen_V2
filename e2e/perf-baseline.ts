@@ -121,16 +121,38 @@ function transferIsQuiet(tracker: CdpTracker): boolean {
   return true;
 }
 
+/** Video srcs the document asked for that have not finished transferring. */
+async function declaredMediaStillMissing(page: Page, tracker: CdpTracker): Promise<boolean> {
+  const srcs = await page
+    .evaluate(() =>
+      [...document.querySelectorAll('video[src]')].flatMap((node) => {
+        const video = node as HTMLVideoElement;
+        const src = video.currentSrc || video.src;
+        return src.startsWith('http') ? [src] : [];
+      }),
+    )
+    .catch(() => [] as string[]);
+  if (srcs.length === 0) return false;
+  const finished = new Set<string>();
+  for (const [id, meta] of tracker.meta) {
+    if (!tracker.bytes.has(id)) continue;
+    finished.add(meta.url.split('#')[0].split('?')[0]);
+  }
+  return srcs.some((src) => !finished.has(src.split('#')[0].split('?')[0]));
+}
+
 /**
- * The load event fires while the landing video is still downloading on Slow 3G.
- * Wait until those responses finish, and ignore realtime sockets that never close.
- * Returns false when the cap is hit and the byte total may still be short.
+ * The load event fires while large images and the hero video are still in flight
+ * on Slow 3G. The video request often starts only after those images finish, so
+ * a quiet network is not enough while a declared video src has no completed
+ * response. Realtime sockets are ignored. Returns false when the cap is hit.
  */
-async function waitForTransferToSettle(tracker: CdpTracker, maxMs = 100_000, quietMs = 2_000): Promise<boolean> {
+async function waitForTransferToSettle(page: Page, tracker: CdpTracker, maxMs = 180_000, quietMs = 2_000): Promise<boolean> {
   const deadline = Date.now() + maxMs;
   let quietSince = 0;
   while (Date.now() < deadline) {
-    if (transferIsQuiet(tracker)) {
+    const mediaMissing = await declaredMediaStillMissing(page, tracker);
+    if (transferIsQuiet(tracker) && !mediaMissing) {
       if (quietSince === 0) quietSince = Date.now();
       if (Date.now() - quietSince >= quietMs) return true;
     } else {
@@ -138,7 +160,7 @@ async function waitForTransferToSettle(tracker: CdpTracker, maxMs = 100_000, qui
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  return transferIsQuiet(tracker);
+  return transferIsQuiet(tracker) && !(await declaredMediaStillMissing(page, tracker));
 }
 
 async function readResourceTiming(page: Page): Promise<{ fcpMs: number | null; entries: { url: string; bytes: number }[] }> {
@@ -247,9 +269,9 @@ export async function measurePage(args: {
 
     let transferNote: string | undefined;
     if (tracker && throttling === 'slow-3g') {
-      const settled = await waitForTransferToSettle(tracker);
+      const settled = await waitForTransferToSettle(page, tracker);
       if (!settled) {
-        transferNote = 'In-flight responses were still open after 100s, so transferredBytes may be short.';
+        transferNote = 'In-flight responses were still open after 180s, so transferredBytes may be short.';
       }
     }
 
