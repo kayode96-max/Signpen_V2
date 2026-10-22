@@ -37,6 +37,19 @@ const nextConfig: NextConfig = {
       }
     ],
   },
+  async headers() {
+    return [
+      {
+        source: '/images/vid1.d685294af0.mp4',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
