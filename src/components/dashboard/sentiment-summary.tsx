@@ -6,8 +6,9 @@ import type { Signature } from "@/lib/types";
 import { motion } from "framer-motion";
 
 const GENERIC_SENTIMENT_ERROR = "Failed to analyze sentiments. Please try again.";
+const UNAVAILABLE_SENTIMENT_ERROR = "AI summaries aren't available right now. Please try again later.";
 
-function readErrorMessage(payload: unknown): string | null {
+function readErrorDetail(payload: unknown): string | null {
   if (!payload || typeof payload !== "object" || !("error" in payload)) return null;
   const message = (payload as { error?: unknown }).error;
   if (typeof message !== "string") return null;
@@ -37,7 +38,12 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
       });
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok) {
-        setError(readErrorMessage(result) ?? GENERIC_SENTIMENT_ERROR);
+        const detail = readErrorDetail(result);
+        console.error(
+          "Sentiment request failed:",
+          detail ?? `Request failed with status ${response.status}.`
+        );
+        setError(response.status === 503 ? UNAVAILABLE_SENTIMENT_ERROR : GENERIC_SENTIMENT_ERROR);
         return;
       }
       const summaryText =
