@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { ArrowRight, Play } from 'lucide-react';
+import { ArrowRight, Pause, Play } from 'lucide-react';
 import Image from 'next/image';
 import heroPoster from '@/assets/hero-poster.webp';
 
@@ -52,10 +52,15 @@ function isMobileViewport(): boolean {
   return window.matchMedia('(max-width: 767px)').matches;
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 const HeroVideo = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasStarted, setHasStarted] = useState(false);
+  const [playing, setPlaying] = useState(false);
 
   const attachAndPlay = (video: HTMLVideoElement) => {
     video.muted = true;
@@ -76,13 +81,13 @@ const HeroVideo = () => {
     const container = containerRef.current;
     const video = videoRef.current;
     if (!container || !video) return;
-    if (isMobileViewport() || blocksAutoplay()) return;
+    if (isMobileViewport() || blocksAutoplay() || prefersReducedMotion()) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         const inView = entries.some((entry) => entry.isIntersecting);
         if (!inView || !videoRef.current) return;
-        if (isMobileViewport() || blocksAutoplay()) return;
+        if (isMobileViewport() || blocksAutoplay() || prefersReducedMotion()) return;
         attachAndPlay(videoRef.current);
         observer.disconnect();
       },
@@ -97,6 +102,17 @@ const HeroVideo = () => {
     const video = videoRef.current;
     if (!video) return;
     attachAndPlay(video);
+  };
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      attachAndPlay(video);
+      return;
+    }
+    video.pause();
+    setPlaying(false);
   };
 
   return (
@@ -115,8 +131,26 @@ const HeroVideo = () => {
         width={1920}
         height={1080}
         aria-label="SignPen product preview"
-        onPlaying={() => setHasStarted(true)}
+        onPlaying={() => {
+          setHasStarted(true);
+          setPlaying(true);
+        }}
+        onPause={() => setPlaying(false)}
       />
+      {hasStarted && (
+        <button
+          type="button"
+          onClick={togglePlayback}
+          aria-label={playing ? 'Pause video' : 'Play video'}
+          className="absolute bottom-3 right-3 z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-black/70 text-white shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+          {playing ? (
+            <Pause className="h-5 w-5 fill-current" aria-hidden="true" />
+          ) : (
+            <Play className="h-5 w-5 fill-current" aria-hidden="true" />
+          )}
+        </button>
+      )}
       {!hasStarted && (
         <>
           <Image
