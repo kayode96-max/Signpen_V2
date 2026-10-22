@@ -212,18 +212,25 @@ alter function public.get_student_public(uuid) owner to postgres;
 revoke all on function public.get_student_public(uuid) from public, anon, authenticated;
 grant execute on function public.get_student_public(uuid) to anon, authenticated;
 
--- Public signatures for one board. Both privacy flags must be false.
+-- Public signatures for one board.
+-- hidden_by_owner = true is omitted, so a hidden signature does not occupy
+-- the shirt. private_by_signer = true is included: the note is null and
+-- is_private is true. Position, name, and image stay so the layout holds.
 -- Creation time is "timestamp" (the table has no createdAt column).
--- Signer ids and IP hashes are not in this result. The browser select
--- policy stays, because realtime postgres_changes needs table select.
--- That policy is a known gap: anon can read public rows across boards.
-create or replace function public.get_board_signatures(p_id uuid)
+-- Signer ids, device fields, IP hashes, and the raw flags are not returned.
+-- The table select policy is unchanged. Anon realtime postgres_changes still
+-- only fires for rows with both flags false. Clients refetch this function
+-- on any realtime event and on focus. Closing the cross-board anon table
+-- read (Realtime broadcast, then revoke anon select) is a release blocker
+-- in the follow-up, not an accepted gap.
+create or replace function public.signatures_public(p_id uuid)
 returns table (
   id uuid,
   "studentId" uuid,
-  "signatureImageUrl" text,
   "signatoryName" text,
+  "signatureImageUrl" text,
   "signatoryNote" text,
+  is_private boolean,
   position jsonb,
   "timestamp" timestamptz
 )
@@ -235,17 +242,42 @@ as $$
   select
     s.id,
     s."studentId",
-    s."signatureImageUrl",
     s."signatoryName",
-    s."signatoryNote",
+    s."signatureImageUrl",
+    case when s.private_by_signer then null else s."signatoryNote" end,
+    s.private_by_signer as is_private,
     s.position,
     s."timestamp"
   from public.signatures s
   where s."studentId" = p_id
     and p_id is not null
-    and s.private_by_signer = false
     and s.hidden_by_owner = false
   order by s."timestamp" asc;
+$$;
+
+alter function public.signatures_public(uuid) owner to postgres;
+
+revoke all on function public.signatures_public(uuid) from public, anon, authenticated;
+grant execute on function public.signatures_public(uuid) to anon, authenticated;
+
+-- The frontend PR calls this name. It returns the signatures_public row, unchanged.
+create or replace function public.get_board_signatures(p_id uuid)
+returns table (
+  id uuid,
+  "studentId" uuid,
+  "signatoryName" text,
+  "signatureImageUrl" text,
+  "signatoryNote" text,
+  is_private boolean,
+  position jsonb,
+  "timestamp" timestamptz
+)
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select * from public.signatures_public(p_id);
 $$;
 
 alter function public.get_board_signatures(uuid) owner to postgres;
@@ -265,17 +297,19 @@ revoke all on table public.sentiment_daily_usage from public, anon, authenticate
 
 -- ---------------------------------------------------------------------------
 -- signatures
--- Public (and anonymous sessions) read a row only when both privacy flags
--- are false. The owner reads every signature on their board. The signer
--- reads their own row while it is not hidden by the owner, including after
--- the 24 hour edit window, so a private note does not vanish from their
--- session. ASSUMPTION: that self-read is acceptable.
+-- Direct table reads. Anon sees a row only when both privacy flags are
+-- false, so realtime postgres_changes for anon does not fire for private
+-- or hidden rows. The owner reads every signature on their board, including
+-- hidden rows and private notes. The signer reads their own row while it is
+-- not hidden by the owner, including after the 24 hour edit window, so a
+-- private note does not vanish from their session. ASSUMPTION: that
+-- self-read is acceptable.
 -- Inserts: no policy and no grant. insert_signature() is the only writer.
--- KNOWN GAP: signatures_select lets anon select every public signature row
--- with no board filter, which exposes board ids. Realtime postgres_changes
--- needs that table select, so the policy stays. The follow-up moves live
--- updates to Realtime broadcast and revokes anon table select. Until then,
--- get_board_signatures(p_id) is the filtered read.
+-- The filtered public read is signatures_public (get_board_signatures is an
+-- alias). signatures_select has no board filter, so anon can still read
+-- public rows across boards and learn board ids. Realtime postgres_changes
+-- needs that table select for now. Closing it — Realtime broadcast, then
+-- revoke anon table select — is a release blocker in the follow-up.
 -- ---------------------------------------------------------------------------
 revoke all on table public.signatures from public, anon, authenticated;
 grant select on table public.signatures to anon, authenticated;
@@ -426,6 +460,8 @@ grant select on table public.feedback_public to anon, authenticated;
 -- written, so later signatures in the hour still need a token.
 -- Deleting a signature removes the signer link, so that session may sign
 -- again. The IP row remains and still counts toward the hour.
+-- Hiding a signature frees its spot. This function never reads another
+-- row's position, so hidden_by_owner = true cannot reject p_position.
 -- ---------------------------------------------------------------------------
 create or replace function public.insert_signature(
   p_student_id uuid,

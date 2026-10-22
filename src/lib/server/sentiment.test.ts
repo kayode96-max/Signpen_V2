@@ -147,32 +147,68 @@ describe('migration contract', () => {
     expect(rls).toContain('revoke all on table public.feedback_ip_hashes from public, anon, authenticated');
   });
 
-  it('returns only public signature columns for one board', () => {
+  it('returns public shirt rows and blanks a private note', () => {
     const fn = rls.slice(
-      rls.indexOf('function public.get_board_signatures(p_id uuid)'),
-      rls.indexOf('alter function public.get_board_signatures')
+      rls.indexOf('function public.signatures_public(p_id uuid)'),
+      rls.indexOf('alter function public.signatures_public')
     );
     const returns = fn.slice(0, fn.indexOf('language sql'));
     expect(returns).toContain('id uuid');
     expect(returns).toContain('"studentId" uuid');
-    expect(returns).toContain('"signatureImageUrl" text');
     expect(returns).toContain('"signatoryName" text');
+    expect(returns).toContain('"signatureImageUrl" text');
     expect(returns).toContain('"signatoryNote" text');
+    expect(returns).toContain('is_private boolean');
     expect(returns).toContain('position jsonb');
     expect(returns).toContain('"timestamp" timestamptz');
-    expect(returns).not.toMatch(/private_by_signer|hidden_by_owner|signerUserId|ipHash|email/);
+    expect(returns).not.toMatch(/private_by_signer|hidden_by_owner|signerUserId|ipHash|device_id|signer_slot/);
     expect(fn).toContain('security definer');
+
+    const selectList = fn.slice(fn.indexOf('select'), fn.indexOf('from public.signatures'));
+    expect(selectList).toContain('case when s.private_by_signer then null else s."signatoryNote" end');
+    expect(selectList).toContain('s.private_by_signer as is_private');
+    expect(selectList).toContain('s.position');
+    expect(selectList).not.toMatch(/signerUserId|ipHash|device_id|client_signature_id|signer_slot|hidden_by_owner/);
 
     const where = fn.slice(fn.indexOf('where'), fn.indexOf('order by'));
     expect(where).toContain('s."studentId" = p_id');
-    expect(where).toContain('s.private_by_signer = false');
     expect(where).toContain('s.hidden_by_owner = false');
+    expect(where).not.toContain('private_by_signer = false');
     expect(where).not.toMatch(/\bor\b/i);
     expect(fn).toContain('order by s."timestamp" asc');
-    expect(fn).not.toMatch(/signature_signers|signed_ips|signerUserId|ipHash/);
+    expect(fn).not.toMatch(/signature_signers|signed_ips|signerUserId|ipHash|device_id/);
+    expect(rls).toContain('grant execute on function public.signatures_public(uuid) to anon, authenticated');
+
+    const alias = rls.slice(
+      rls.indexOf('function public.get_board_signatures(p_id uuid)'),
+      rls.indexOf('alter function public.get_board_signatures')
+    );
+    expect(alias).toContain('select * from public.signatures_public(p_id)');
+    expect(alias).not.toMatch(/from public\.signatures s/);
+    expect(alias).toContain('is_private boolean');
     expect(rls).toContain('grant execute on function public.get_board_signatures(uuid) to anon, authenticated');
+
     expect(rls).toContain('create policy signatures_select on public.signatures');
     expect(rls).toContain('grant select on table public.signatures to anon, authenticated');
+    const policy = rls.slice(
+      rls.indexOf('create policy signatures_select'),
+      rls.indexOf('create policy signatures_owner_update')
+    );
+    expect(policy).toContain('private_by_signer = false and hidden_by_owner = false');
+    expect(policy).toContain('"studentId" = auth.uid() and public.is_real_user()');
+  });
+
+  it('does not let a hidden signature occupy a spot on insert', () => {
+    const fn = rls.slice(
+      rls.indexOf('function public.insert_signature('),
+      rls.indexOf('alter function public.insert_signature')
+    );
+    const beforeInsert = fn.slice(fn.indexOf('begin'), fn.indexOf('insert into public.signatures'));
+    expect(beforeInsert).not.toContain('hidden_by_owner');
+    expect(beforeInsert).not.toContain('position');
+    expect(beforeInsert).not.toMatch(/from public\.signatures/);
+    expect(fn).toContain('p_position,');
+    expect(fn).not.toMatch(/overlap|occupied|too close/i);
   });
 
   it('lets only the signer change private_by_signer', () => {
