@@ -9,6 +9,7 @@
  *  • Composites signature images onto the shirt texture via an offscreen canvas.
  *  • Exposes `onShirtClick(uv)` so parent components can show a signature dialog.
  *  • Exposes `addSignature(canvas, uv)` so the parent can bake a drawn signature.
+ *    A new placement replaces this signer's in-progress one only when accepted.
  *  • Exposes `clearAll()` and `undoLast()` for the current signer's placements.
  *    Signatures already on the shirt are left in place.
  *  • Exposes `getScreenshot()` → data-URL for download / save.
@@ -26,7 +27,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
   clearSessionPlacements,
-  overlapsPlacement,
+  commitSessionPlacement,
   texturePointFromUv,
   undoSessionPlacement,
   type ShirtPlacement,
@@ -34,7 +35,11 @@ import {
 
 // ─── Public API exposed via ref ────────────────────────────────────────────
 export interface TShirtCanvasRef {
-  /** Bake a signature canvas image onto the shirt at the given UV position */
+  /**
+   * Bake this signer's signature at the given UV.
+   * Replaces their in-progress placement when the spot is free.
+   * Returns false and leaves the shirt unchanged when it is not.
+   */
   addSignature: (
     sigCanvas: HTMLCanvasElement,
     uv: { x: number; y: number },
@@ -158,10 +163,14 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     // ── Public API ─────────────────────────────────────────────────────────
     useImperativeHandle(ref, () => ({
       addSignature(sigCanvas, uv, size = { width: 280, height: 120 }) {
-        // Distance from every signature still on the shirt, including other people's.
         const area = texturePointFromUv(uv, TEX_W, TEX_H);
-        if (overlapsPlacement(placedItemsRef.current, area, SIG_RADIUS)) return false;
-        placedItemsRef.current.push({ kind: 'session', canvas: sigCanvas, uv, size, area });
+        const result = commitSessionPlacement(
+          placedItemsRef.current,
+          { kind: 'session', canvas: sigCanvas, uv, size, area },
+          SIG_RADIUS
+        );
+        if (!result.accepted) return false;
+        placedItemsRef.current = result.placements;
         redrawComposite();
         return true;
       },

@@ -92,7 +92,6 @@ export default function TShirtSigningModal({
 }: TShirtSigningModalProps): JSX.Element {
   const shirtRef = useRef<TShirtCanvasRef>(null);
   const signatureRef = useRef<SignatureCanvasRef>(null);
-  const hasPlacedOneRef = useRef(false);
 
   const [pendingUV, setPendingUV] = useState<{ x: number; y: number } | null>(null);
   const [drawOpen, setDrawOpen] = useState(false);
@@ -149,17 +148,13 @@ export default function TShirtSigningModal({
       return;
     }
 
-    if (hasPlacedOneRef.current) {
-      shirt.undoLast();
-    }
-
+    // Rejected spots leave the current mark on the shirt and pendingPlacement as-is.
     const ok = shirt.addSignature(sigCanvas, pendingUV, { width: 320, height: 140 });
     if (!ok) {
       showToast('That spot is too close to another signature.');
       return;
     }
 
-    hasPlacedOneRef.current = true;
     setPendingPlacement({
       signatureImageUrl,
       position: {
@@ -241,14 +236,14 @@ export default function TShirtSigningModal({
               <Button
                 size="sm"
                 className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
-                onClick={() => { shirtRef.current?.undoLast(); setPendingPlacement(null); hasPlacedOneRef.current = false; }}
+                onClick={() => { shirtRef.current?.undoLast(); setPendingPlacement(null); }}
               >
                 <Undo2 className="h-4 w-4 mr-2" /> Undo
               </Button>
               <Button
                 size="sm"
                 className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
-                onClick={() => { shirtRef.current?.clearAll(); setPendingPlacement(null); hasPlacedOneRef.current = false; showToast('Cleared.'); }}
+                onClick={() => { shirtRef.current?.clearAll(); setPendingPlacement(null); showToast('Cleared.'); }}
               >
                 <Trash2 className="h-4 w-4 mr-2" /> Clear
               </Button>

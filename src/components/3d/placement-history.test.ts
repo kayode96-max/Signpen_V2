@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   clearSessionPlacements,
+  commitSessionPlacement,
   overlapsPlacement,
   texturePointFromUv,
   undoSessionPlacement,
@@ -85,6 +86,76 @@ describe('overlapsPlacement', () => {
     const placements = [existing('a', { x: 0, y: 0 })];
     assert.equal(overlapsPlacement(placements, { x: 3, y: 4 }, 5), false);
     assert.equal(overlapsPlacement(placements, { x: 3, y: 4 }, 5.01), true);
+  });
+});
+
+describe('commitSessionPlacement', () => {
+  const radius = 150;
+
+  it('keeps the previous signature when the new spot overlaps someone else', () => {
+    const items = [
+      existing('theirs', { x: 0, y: 0 }),
+      session('mine', { x: 400, y: 400 }),
+    ];
+    const result = commitSessionPlacement(items, session('next', { x: 100, y: 0 }), radius);
+    assert.equal(result.accepted, false);
+    assert.equal(result.placements, items);
+  });
+
+  it('keeps the previous signature when the new spot overlaps both marks', () => {
+    const items = [
+      existing('theirs', { x: 0, y: 0 }),
+      session('mine', { x: 80, y: 0 }),
+    ];
+    const result = commitSessionPlacement(items, session('next', { x: 40, y: 0 }), radius);
+    assert.equal(result.accepted, false);
+    assert.equal(result.placements, items);
+  });
+
+  it('replaces only the latest session placement when the new spot is free', () => {
+    const result = commitSessionPlacement(
+      [
+        existing('theirs', { x: 0, y: 0 }),
+        session('mine', { x: 400, y: 0 }),
+        existing('later', { x: 0, y: 400 }),
+      ],
+      session('next', { x: 400, y: 200 }),
+      radius
+    );
+    assert.equal(result.accepted, true);
+    assert.deepEqual(result.placements.map((item) => item.id), ['theirs', 'later', 'next']);
+  });
+
+  it('allows a move that overlaps only the signature being replaced', () => {
+    const result = commitSessionPlacement(
+      [session('mine', { x: 0, y: 0 })],
+      session('next', { x: 100, y: 0 }),
+      radius
+    );
+    assert.equal(result.accepted, true);
+    assert.deepEqual(result.placements.map((item) => item.id), ['next']);
+  });
+
+  it('still blocks on an older session placement that is not replaced', () => {
+    const items = [session('older', { x: 0, y: 0 }), session('latest', { x: 500, y: 0 })];
+    const blocked = commitSessionPlacement(items, session('next', { x: 100, y: 0 }), radius);
+    assert.equal(blocked.accepted, false);
+    assert.equal(blocked.placements, items);
+
+    const moved = commitSessionPlacement(items, session('next', { x: 500, y: 100 }), radius);
+    assert.equal(moved.accepted, true);
+    assert.deepEqual(moved.placements.map((item) => item.id), ['older', 'next']);
+  });
+
+  it('appends a first placement and rejects one that overlaps an existing signature', () => {
+    const items = [existing('theirs', { x: 0, y: 0 })];
+    const rejected = commitSessionPlacement(items, session('next', { x: 10, y: 0 }), radius);
+    assert.equal(rejected.accepted, false);
+    assert.equal(rejected.placements, items);
+
+    const placed = commitSessionPlacement(items, session('next', { x: 400, y: 0 }), radius);
+    assert.equal(placed.accepted, true);
+    assert.deepEqual(placed.placements.map((item) => item.id), ['theirs', 'next']);
   });
 });
 

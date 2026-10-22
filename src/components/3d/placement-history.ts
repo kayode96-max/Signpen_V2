@@ -4,7 +4,8 @@
  * Existing signatures (other people) and the current signer's in-progress
  * placements share one draw list so compositing stays a single pass, but
  * Undo / Clear may only touch `session` entries. Overlap uses every entry
- * that is still on the shirt.
+ * that would remain on the shirt. A reposition does not remove the signer's
+ * current mark unless the new spot is accepted.
  */
 
 export type PlacementKind = 'existing' | 'session';
@@ -82,4 +83,38 @@ export function clearSessionPlacements<T extends { kind: PlacementKind }>(
   }
   if (!removed) return { placements, removed: false };
   return { placements: next, removed: true };
+}
+
+/**
+ * Set the current signer's in-progress placement.
+ *
+ * When they already have one, it replaces only that latest mark. The new spot
+ * may overlap the mark being replaced (so a small nudge works) but not any
+ * signature that stays. On rejection the same array is returned and the
+ * previous placement is still in it.
+ */
+export function commitSessionPlacement<T extends { kind: PlacementKind; area: PlacementPoint }>(
+  placements: T[],
+  next: T,
+  radius: number
+): { placements: T[]; accepted: boolean } {
+  let latestSessionIndex = -1;
+  for (let i = placements.length - 1; i >= 0; i--) {
+    if (placements[i].kind === 'session') {
+      latestSessionIndex = i;
+      break;
+    }
+  }
+
+  const blocking = latestSessionIndex < 0
+    ? placements
+    : placements.filter((_, index) => index !== latestSessionIndex);
+  if (overlapsPlacement(blocking, next.area, radius)) {
+    return { placements, accepted: false };
+  }
+
+  const updated = placements.slice();
+  if (latestSessionIndex >= 0) updated.splice(latestSessionIndex, 1);
+  updated.push(next);
+  return { placements: updated, accepted: true };
 }
