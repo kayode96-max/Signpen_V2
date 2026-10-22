@@ -47,7 +47,7 @@ The lint/typecheck/build workflow is separate and is not modified here.
 | `ENFORCE_PERF_BUDGETS` | unset | Set to `1` to fail Chromium Slow 3G rows that miss a budget |
 | `TEST_STUDENT_URL` | unset | Seeded preview graduate. Adds the board page to the perf baseline. The sign-flow test stays skipped when this is unset |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | unset | Vercel protection bypass. Sent as a header when set. Not logged |
-| `SUPABASE_PREVIEW_URL` | unset | Preview Supabase URL. The `signatures_public` placeholders stay skipped when this is unset |
+| `SUPABASE_PREVIEW_URL` | unset | Preview Supabase URL. The `signatures_public` placeholders and the unknown-UUID cache 404 stay skipped when this is unset. Do not point it at production |
 | `SUPABASE_ANON_KEY` | unset | Anon key for those placeholders once they are enabled. `NEXT_PUBLIC_SUPABASE_ANON_KEY` is the fallback. Not logged |
 | `TEST_BOARD_ID` | unset | Board id or slug passed as `p_id`. Falls back to the path of `TEST_STUDENT_URL` |
 
@@ -63,7 +63,7 @@ Public pages (`/`, `/contact`, `/login`) on desktop Chromium, Pixel 5, and iPhon
 
 Unknown students (fixed slug, random UUID, long garbage id): server HTTP 404, not 200 and not 500. Expected to fail until the server returns 404.
 
-Board cache, from the ruling on PR #17. An id that is neither a UUID nor a slug (`^[a-z0-9]+(-[a-z0-9]+)*$`, 3 to 30 characters), including an 80-character id and a 2048-character id, returns 404 with a short public cache (`s-maxage` of about 60). A valid but unknown UUID, and a valid but unknown slug such as `qa-unknown-2026`, return 404 with `Cache-Control` containing `no-store`. Those checks are expected to fail on main until #17 lands. An error from the board page or `GET /api/boards/[studentId]/signatures` must also send `no-store`. That case is skipped unless `SUPABASE_PREVIEW_URL` is set, and it stays `test.fixme` until a failure can be forced.
+Board cache, from the ruling on PR #17. Cache headers are asserted on `GET /api/boards/[id]/signatures`. An id that is neither a UUID nor a slug (`^[a-z0-9]+(-[a-z0-9]+)*$`, 3 to 30 characters), including an 80-character id and a 2048-character id, returns 404 with a short public cache (`s-maxage` of about 60). The slug `qa-unknown-2026` returns 404 with `no-store`. A valid but unknown UUID returns 404 with `no-store` only when `SUPABASE_PREVIEW_URL` is set, because without a reachable Supabase that request is a 500. That 500 is the error case, and it must send `no-store`. It runs when `SUPABASE_PREVIEW_URL` is unset. Junk-id and slug cases run anywhere. The shirt page is checked only for HTTP 404 and for a `Cache-Control` that does not contain `s-maxage` (the page HTML is `private, no-store`). Every case is `test.fail` on main until #17 lands.
 
 `/contact` privacy: feedback responses must not include an `email` field, and the page must not request `signed_ips`. Expected to fail when that leak is present (the email leak is on production today).
 
