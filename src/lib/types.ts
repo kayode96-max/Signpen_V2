@@ -23,6 +23,10 @@ export interface Signature {
   signatoryNote: string;
   timestamp: string;
   position: { x: number; y: number };
+  /** Signer chose "only the graduate sees this". Public reads hide the row when true. */
+  private_by_signer?: boolean;
+  /** Board owner hid the row. Only the owner can set this. */
+  hidden_by_owner?: boolean;
 }
 
 export interface ThankYouCard {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import type { Signature } from "@/lib/types";
 import { motion } from "framer-motion";
+import { supabase } from "@/supabase";
 
 export default function SentimentSummary({ signatures }: { signatures: Signature[] }) {
   const [summary, setSummary] = useState("");
@@ -19,18 +20,28 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         setSummary("No signatures yet to analyze. Share your page to get started!");
         return;
       }
-      const messages = signatures.map(s => `${s.signatoryName}: "${s.signatoryNote}"`);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setError("Sign in to analyze sentiments.");
+        return;
+      }
       const response = await fetch("/api/sentiment-summary", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signatures: messages }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
       });
-      if (!response.ok) throw new Error("Sentiment request failed.");
-      const result = await response.json();
+      const result = await response.json().catch(() => ({ error: "Sentiment request failed." }));
+      if (!response.ok) {
+        throw new Error(result.error || "Sentiment request failed.");
+      }
       setSummary(result.sentimentSummary);
     } catch (e) {
       console.error(e);
-      setError("Failed to analyze sentiments. Please try again.");
+      setError(e instanceof Error ? e.message : "Failed to analyze sentiments. Please try again.");
     } finally {
       setIsLoading(false);
     }

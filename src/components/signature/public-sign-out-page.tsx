@@ -67,6 +67,7 @@ export default function PublicSignOutPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [sigName, setSigName] = useState("");
   const [sigNote, setSigNote] = useState("");
+  const [onlyGraduate, setOnlyGraduate] = useState(false);
 
   // 3-D modal
   const [showModal, setShowModal] = useState(false);
@@ -142,16 +143,19 @@ export default function PublicSignOutPage() {
           signatoryName: sigName,
           signatoryNote: sigNote,
           position: payload.position,
+          privateBySigner: onlyGraduate,
         }),
       });
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({ error: "Submission failed." }));
+        if (response.status === 409) setHasAlreadySigned(true);
         throw new Error(payload.error || "Submission failed.");
       }
 
       setSigName("");
       setSigNote("");
+      setOnlyGraduate(false);
       setHasAlreadySigned(true);
       setShowModal(false);
       setShowThankYou(true);
@@ -298,6 +302,7 @@ export default function PublicSignOutPage() {
               <Input 
                 placeholder="Jane Doe" 
                 value={sigName} 
+                maxLength={80}
                 onChange={(e) => setSigName(e.target.value)} 
                 className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
               />
@@ -307,10 +312,20 @@ export default function PublicSignOutPage() {
               <Input 
                 placeholder="Wishing you all the best!" 
                 value={sigNote} 
+                maxLength={1000}
                 onChange={(e) => setSigNote(e.target.value)} 
                 className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
               />
             </div>
+            <label className="flex items-start gap-3 text-sm text-white/70">
+              <input
+                type="checkbox"
+                checked={onlyGraduate}
+                onChange={(e) => setOnlyGraduate(e.target.checked)}
+                className="mt-1 h-4 w-4 accent-white"
+              />
+              <span>Only the graduate sees this</span>
+            </label>
           </div>
           <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-white/5 flex-shrink-0 flex flex-col sm:flex-row justify-end">
             <DialogClose asChild>

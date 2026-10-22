@@ -167,10 +167,24 @@ export async function updatePassword(user: any, newPassword: string) {
   if (error) throw error;
 }
 
-export async function deleteUser(user: any) {
-  const { error } = await supabase.from('students').delete().eq('id', user.uid);
-  if (error) throw error;
-  await supabase.auth.signOut();
+export async function deleteUser(_user: any) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) {
+    throw new Error('You need to be signed in to delete your account.');
+  }
+
+  const response = await fetch('/api/account', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await response.json().catch(() => ({ error: 'Account deletion failed.' }));
+  if (!response.ok) {
+    throw new Error(body.error || 'Account deletion failed.');
+  }
+
+  // The auth user is already gone. Clear this browser only.
+  await supabase.auth.signOut({ scope: 'local' });
 }
 
 export async function signInWithEmailAndPassword(auth: any, email: string, password: string) {
