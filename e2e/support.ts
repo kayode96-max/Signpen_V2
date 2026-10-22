@@ -37,10 +37,13 @@ export async function installReadOnlyGuard(page: Page | BrowserContext): Promise
  * The anon key is public, but the suite still should not reprint it.
  */
 export function redact(text: string): string {
-  return text
+  let redacted = text
     .replace(/apikey=[^&\s'")]+/gi, 'apikey=[redacted]')
     .replace(/bearer\s+[a-z0-9._~+/-]+/gi, 'bearer [redacted]')
-    .slice(0, 300);
+    .replace(/x-vercel-protection-bypass['":=\s]+[^\s,;'"]+/gi, 'x-vercel-protection-bypass=[redacted]');
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (bypass) redacted = redacted.split(bypass).join('[redacted]');
+  return redacted.slice(0, 300);
 }
 
 const TRANSPORT_FAILURE =

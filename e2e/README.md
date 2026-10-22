@@ -30,7 +30,9 @@ BASE_URL="https://<preview>.vercel.app" npm run test:e2e
 
 After `.github/workflows/e2e.yml` is on the default branch, GitHub Actions runs this suite on a successful Vercel **Preview** `deployment_status`. Production deployments are not targeted.
 
-You can also run it by hand: Actions → **e2e** → Run workflow, and pass the preview URL as `base_url`. The workflow checks out the branch you select, installs Chromium and WebKit, and runs `npm run test:e2e` with that `BASE_URL`. It does not use repository secrets.
+You can also run it by hand: Actions → **e2e** → Run workflow, and pass the preview URL as `base_url`. The workflow checks out the branch you select, installs Chromium and WebKit, and runs `npm run test:e2e` with that `BASE_URL`.
+
+If the preview uses Vercel deployment protection, set the Actions secret `VERCEL_AUTOMATION_BYPASS_SECRET`. The workflow passes it through, and Playwright sends `x-vercel-protection-bypass` plus `x-vercel-set-bypass-cookie: true`. The value is never printed. Leave the secret unset for a public preview.
 
 The lint/typecheck/build workflow is separate and is not modified here.
 
@@ -41,10 +43,14 @@ The lint/typecheck/build workflow is separate and is not modified here.
 | `BASE_URL` | `http://localhost:3000` | Site under test |
 | `FCP_BUDGET_MS` | `5000` | Slow 3G first contentful paint budget |
 | `TRANSFER_BUDGET_BYTES` | `1048576` | Slow 3G first-view transfer budget (1 MiB) |
-| `ENFORCE_PERF_BUDGETS` | unset | Set to `1` to fail when a budget is missed |
-| `TEST_STUDENT_URL` | unset | Seeded preview graduate. The sign-flow test stays skipped when this is unset |
+| `ENFORCE_PERF_BUDGETS` | unset | Set to `1` to fail Slow 3G rows that miss the budget |
+| `TEST_STUDENT_URL` | unset | Seeded preview graduate. Adds the board page to the perf baseline. The sign-flow test stays skipped when this is unset |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | unset | Vercel protection bypass. Sent as a header when set. Not logged |
+| `SUPABASE_PREVIEW_URL` | unset | Preview Supabase URL. The `signatures_public` placeholders stay skipped when this is unset |
+| `SUPABASE_ANON_KEY` | unset | Anon key for those placeholders once they are enabled. `NEXT_PUBLIC_SUPABASE_ANON_KEY` is the fallback. Not logged |
+| `TEST_BOARD_ID` | unset | Board id or slug passed as `p_id`. Falls back to the path of `TEST_STUDENT_URL` |
 
-Slow 3G uses the Chrome DevTools preset (2000 ms latency, 50 KB/s down and up) and 4x CPU throttling on Chromium. Transfer is CDP `encodedDataLength` (bytes on the wire, including cross-origin). The run prints FCP and bytes. Budgets are annotations until `ENFORCE_PERF_BUDGETS=1`.
+Slow 3G uses the Chrome DevTools preset (2000 ms latency, 50 KB/s down and up) and 4x CPU throttling on Chromium (desktop and Pixel 5). Transfer there is CDP `encodedDataLength`. After `load`, Chromium waits until in-flight responses finish (up to 100s) so the hero video is included. Realtime sockets are ignored. iPhone 12 runs in WebKit, which cannot apply that throttle, so those rows are marked `throttling: "unthrottled"` and use resource timing. Each row records FCP, total bytes, request count, and the 5 largest resources. The merged file is `e2e/results/perf-baseline.json` (also a Playwright attachment, and a GitHub Actions artifact named `perf-baseline`). Budgets are report-only until `ENFORCE_PERF_BUDGETS=1`, and even then they apply only to Slow 3G rows.
 
 ## Tests
 
@@ -54,6 +60,8 @@ Unknown students (fixed slug, random UUID, long garbage id): server HTTP 404, no
 
 `/contact` privacy: feedback responses must not include an `email` field, and the page must not request `signed_ips`. Expected to fail when that leak is present (the email leak is on production today).
 
-Landing page Slow 3G: records FCP and transferred bytes. Does not fail on budget misses unless enforced.
+Perf baseline: `/`, `/contact`, `/login`, and the board page when `TEST_STUDENT_URL` is set, on desktop Chromium, Pixel 5, and iPhone 12. Report-only unless budgets are enforced.
 
 Sign flow: skipped unless `TEST_STUDENT_URL` is set, and still a placeholder when it is set. It does not sign.
+
+`signatures_public(p_id)`, and the alias `get_board_signatures(p_id)`: skipped unless `SUPABASE_PREVIEW_URL` is set, and `test.fixme` even then. Hidden rows are left out. Private rows come back with `is_private: true` and `signatoryNote: null`, and keep `signatoryName`, `signatureImageUrl`, and `position`. No row includes signer ids, device or IP fields, or the raw `private_by_signer` / `hidden_by_owner` flags. A second fixme checks the board id leak: an anon client must not list signatures across boards without the board's id or slug, including either RPC called without `p_id`.

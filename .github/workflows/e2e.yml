@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: e2e-${{ github.event.deployment.sha || github.ref }}
@@ -22,7 +23,7 @@ jobs:
     name: Playwright smoke
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && contains(github.event.deployment_status.environment, 'Preview')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
     steps:
@@ -47,4 +48,15 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
 
       - name: Smoke
+        env:
+          # Optional. Unset until the repo secret exists. The value is not printed.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: npm run test:e2e
+
+      - name: Upload perf baseline
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-baseline
+          path: e2e/results/perf-baseline.json
+          if-no-files-found: warn
