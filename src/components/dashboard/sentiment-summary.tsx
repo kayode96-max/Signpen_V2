@@ -5,8 +5,8 @@ import { Loader2, Sparkles } from "lucide-react";
 import type { Signature } from "@/lib/types";
 import { motion } from "framer-motion";
 
-const GENERIC_SENTIMENT_ERROR = "Failed to analyze sentiments. Please try again.";
-const UNAVAILABLE_SENTIMENT_ERROR = "AI summaries aren't available right now. Please try again later.";
+const RETRYABLE_SENTIMENT_ERROR = "Couldn't get a summary right now. Please try again in a few minutes.";
+const RATE_LIMIT_SENTIMENT_ERROR = "You've used today's 5 summaries. You can get more tomorrow.";
 
 function readErrorDetail(payload: unknown): string | null {
   if (!payload || typeof payload !== "object" || !("error" in payload)) return null;
@@ -20,10 +20,12 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
   const [summary, setSummary] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [allowRetry, setAllowRetry] = useState(false);
 
   const handleAnalyze = async () => {
     setIsLoading(true);
     setError("");
+    setAllowRetry(false);
     setSummary("");
     try {
       if (signatures.length === 0) {
@@ -43,7 +45,9 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
           "Sentiment request failed:",
           detail ?? `Request failed with status ${response.status}.`
         );
-        setError(response.status === 503 ? UNAVAILABLE_SENTIMENT_ERROR : GENERIC_SENTIMENT_ERROR);
+        const rateLimited = response.status === 429;
+        setError(rateLimited ? RATE_LIMIT_SENTIMENT_ERROR : RETRYABLE_SENTIMENT_ERROR);
+        setAllowRetry(!rateLimited);
         return;
       }
       const summaryText =
@@ -51,13 +55,15 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
           ? result.summary.trim()
           : "";
       if (!summaryText) {
-        setError(GENERIC_SENTIMENT_ERROR);
+        setError(RETRYABLE_SENTIMENT_ERROR);
+        setAllowRetry(true);
         return;
       }
       setSummary(summaryText);
     } catch (e) {
       console.error(e);
-      setError(GENERIC_SENTIMENT_ERROR);
+      setError(RETRYABLE_SENTIMENT_ERROR);
+      setAllowRetry(true);
     } finally {
       setIsLoading(false);
     }
@@ -85,7 +91,18 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         </motion.div>
       )}
       {error && !isLoading && (
-        <div className="absolute bottom-full mb-4 right-0 w-64 sm:w-80 text-left text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 z-50">{error}</div>
+        <div className="absolute bottom-full mb-4 right-0 w-64 sm:w-80 text-left text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 z-50">
+          <p>{error}</p>
+          {allowRetry && (
+            <button
+              type="button"
+              onClick={handleAnalyze}
+              className="mt-2 font-medium text-white underline underline-offset-2 hover:text-white/80"
+            >
+              Try again
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
