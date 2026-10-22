@@ -20,11 +20,15 @@ import { expect, test } from './support';
  * 3. A valid but unknown UUID is an API 404 with `no-store` only when
  *    `SUPABASE_PREVIEW_URL` is set. Without a reachable Supabase the same
  *    request is a lookup failure: 500 with `no-store`, not a 404.
- *    An uppercase UUID is the same case: it is a UUID, so the final response
- *    is that uncached 404, never the short public cache used for junk ids.
- * 4. An uppercase well-formed slug such as `QA-UNKNOWN-2026` is still a
- *    slug. The final response is 404 with `no-store` and must not send
- *    `s-maxage`. This runs anywhere.
+ * 4. An id that contains uppercase letters 308-redirects to its lowercase
+ *    URL before any lookup or cached read, on both the shirt page and
+ *    `GET /api/boards/[id]/signatures`, and the query string is kept.
+ *    The API redirect sends `Cache-Control: public, max-age=60` and must
+ *    not send `s-maxage`. Following that redirect is the uncached 404
+ *    (`no-store`, no `s-maxage`). The uppercase UUID uses the same
+ *    `SUPABASE_PREVIEW_URL` gate as the lowercase UUID, because the
+ *    followed request is a 500 without a reachable Supabase. The uppercase
+ *    slug `QA-UNKNOWN-2026` runs anywhere.
  * 5. The lookup failure is the error case. It runs when
  *    `SUPABASE_PREVIEW_URL` is unset and expects `no-store`.
  *
@@ -75,6 +79,79 @@ function expectUncached404(status: number, cacheControl: string, label: string):
   expect(cacheControl.toLowerCase(), `${label} must not send s-maxage, received "${cacheControl}"`).not.toContain(
     's-maxage',
   );
+}
+
+const CANONICAL_QUERY = 'from=QR';
+
+type Probe = { status: number; cacheControl: string; location: string };
+
+function origin(): string {
+  return (process.env.BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+}
+
+/** Path plus query, whether Location is absolute or relative. */
+function locationPath(location: string): string {
+  const resolved = new URL(location, `${origin()}/`);
+  return `${resolved.pathname}${resolved.search}`;
+}
+
+/** `s-maxage=60` contains the substring max-age=60, so match the directive itself. */
+function expectApiRedirectCache(header: string): void {
+  const lower = header.toLowerCase();
+  expect(lower, `API redirect must not send s-maxage, received "${header}"`).not.toContain('s-maxage');
+  expect(
+    /(?:^|,)\s*max-age=60\b/.test(lower),
+    `API redirect Cache-Control should contain max-age=60, received "${header}"`,
+  ).toBe(true);
+}
+
+async function getNoRedirect(request: APIRequestContext, path: string): Promise<Probe> {
+  const response = await request.get(path, { maxRedirects: 0 });
+  const headers = response.headers();
+  return {
+    status: response.status(),
+    cacheControl: cacheControlOf(headers),
+    location: headers.location ?? '',
+  };
+}
+
+async function followRedirect(request: APIRequestContext, location: string): Promise<Probe> {
+  const target = locationPath(location);
+  expect(target.startsWith('/'), `redirect stays on this origin, received "${location}"`).toBe(true);
+  const response = await request.get(target);
+  return {
+    status: response.status(),
+    cacheControl: cacheControlOf(response.headers()),
+    location: '',
+  };
+}
+
+async function expectCanonicalRedirect(
+  request: APIRequestContext,
+  rawId: string,
+  lowercaseId: string,
+): Promise<void> {
+  const api = await getNoRedirect(
+    request,
+    `/api/boards/${encodeURIComponent(rawId)}/signatures?${CANONICAL_QUERY}`,
+  );
+  expect(api.status, 'signatures route').toBe(308);
+  expect(locationPath(api.location), 'signatures Location').toBe(
+    `/api/boards/${lowercaseId}/signatures?${CANONICAL_QUERY}`,
+  );
+  expectApiRedirectCache(api.cacheControl);
+  const followedApi = await followRedirect(request, api.location);
+  expectUncached404(followedApi.status, followedApi.cacheControl, 'followed signatures URL');
+
+  const shirt = await getNoRedirect(request, `/${encodeURIComponent(rawId)}?${CANONICAL_QUERY}`);
+  expect(shirt.status, 'shirt page').toBe(308);
+  expect(locationPath(shirt.location), 'shirt Location').toBe(`/${lowercaseId}?${CANONICAL_QUERY}`);
+  expect(
+    shirt.cacheControl.toLowerCase(),
+    `shirt redirect must not send s-maxage, received "${shirt.cacheControl}"`,
+  ).not.toContain('s-maxage');
+  const followedShirt = await followRedirect(request, shirt.location);
+  expectUncached404(followedShirt.status, followedShirt.cacheControl, 'followed shirt URL');
 }
 
 /** Shirt HTML is always private, no-store. Do not require s-maxage or no-store on the document. */
@@ -150,11 +227,11 @@ test('unknown UUID returns an API 404 with Cache-Control no-store', async ({ pag
   expectShirt404(shirt.status, shirt.cacheControl);
 });
 
-test('uppercase UUID returns an API 404 with Cache-Control no-store', async ({ page, request }) => {
+test('uppercase UUID 308s to the lowercase URL before the uncached 404', async ({ request }) => {
   const preview = process.env.SUPABASE_PREVIEW_URL?.trim();
   test.skip(
     !preview,
-    'Without a reachable Supabase a valid UUID is a 500 from the signatures API, not a 404. Set SUPABASE_PREVIEW_URL to a preview project. Do not point this at production.',
+    'Without a reachable Supabase the followed lowercase UUID is a 500 from the signatures API, not a 404. Set SUPABASE_PREVIEW_URL to a preview project. Do not point this at production.',
   );
   test.fail(true, EXPECTED_ON_MAIN);
   noteExpectedFailure();
@@ -162,21 +239,15 @@ test('uppercase UUID returns an API 404 with Cache-Control no-store', async ({ p
   expect(studentId, 'fixture is uppercase').not.toBe(studentId.toLowerCase());
   expect(isUuid(studentId), 'uppercase UUID is still a UUID').toBe(true);
   expect(isSlug(studentId), 'a UUID is not a slug').toBe(false);
-  const api = await getSignatures(request, studentId);
-  expectUncached404(api.status, api.cacheControl, 'uppercase UUID');
-  const shirt = await openBoard(page, studentId);
-  expectShirt404(shirt.status, shirt.cacheControl);
+  await expectCanonicalRedirect(request, studentId, studentId.toLowerCase());
 });
 
-test.fail('uppercase slug QA-UNKNOWN-2026 returns an API 404 with Cache-Control no-store', async ({ page, request }) => {
+test.fail('uppercase slug QA-UNKNOWN-2026 308s to the lowercase URL before the uncached 404', async ({ request }) => {
   noteExpectedFailure();
   const studentId = 'QA-UNKNOWN-2026';
   expect(isSlug(studentId.toLowerCase()), 'QA-UNKNOWN-2026 lowercases to a slug').toBe(true);
   expect(isUuid(studentId), 'QA-UNKNOWN-2026 is not a UUID').toBe(false);
-  const api = await getSignatures(request, studentId);
-  expectUncached404(api.status, api.cacheControl, 'uppercase slug');
-  const shirt = await openBoard(page, studentId);
-  expectShirt404(shirt.status, shirt.cacheControl);
+  await expectCanonicalRedirect(request, studentId, 'qa-unknown-2026');
 });
 
 test.fail('unknown slug qa-unknown-2026 returns an API 404 with Cache-Control no-store', async ({ page, request }) => {

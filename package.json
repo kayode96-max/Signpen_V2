@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:unit": "node --test src/lib/public/board-url.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^4.1.3",
