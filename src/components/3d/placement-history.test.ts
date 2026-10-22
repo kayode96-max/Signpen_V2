@@ -8,7 +8,7 @@ import {
   undoSessionPlacement,
   type PlacementKind,
   type PlacementPoint,
-} from './placement-history';
+} from './placement-history.ts';
 
 interface Mark {
   kind: PlacementKind;
