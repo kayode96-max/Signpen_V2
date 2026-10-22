@@ -7,8 +7,9 @@ import {
   buildSentimentPrompt,
   interpretSentimentQuota,
   notesFromRows,
-  SENTIMENT_QUOTA_MESSAGE,
-  SENTIMENT_UNAVAILABLE_MESSAGE,
+  secondsUntilNextUtcDay,
+  SENTIMENT_QUOTA_ERROR,
+  SENTIMENT_UNAVAILABLE_ERROR,
 } from '@/lib/server/sentiment';
 import { createServiceClient } from '@/lib/server/supabase';
 
@@ -20,13 +21,15 @@ export const dynamic = 'force-dynamic';
  * The request body cannot supply the text sent to Gemini.
  * Quota: 5 calls per board per UTC day. A call is counted before the
  * provider runs so a failing key cannot be retried without limit.
- * Provider and config failures are logged here and returned as a fixed 503.
+ * Provider and config failures are logged here and returned as summary_unavailable.
+ * The daily cap is summary_daily_limit plus Retry-After until the next UTC midnight.
+ * Neither body contains user-facing copy.
  */
 function unavailable(detail: string) {
   const secret = process.env.GOOGLE_API_KEY;
   const safe = secret ? detail.split(secret).join('[redacted]') : detail;
   console.error('sentiment-summary:', safe);
-  return NextResponse.json({ error: SENTIMENT_UNAVAILABLE_MESSAGE }, { status: 503 });
+  return NextResponse.json({ error: SENTIMENT_UNAVAILABLE_ERROR }, { status: 503 });
 }
 
 export async function POST(req: NextRequest) {
@@ -113,7 +116,10 @@ export async function POST(req: NextRequest) {
       return unavailable(`failed to record sentiment usage (${quotaError.code ?? 'unknown'})`);
     }
     if (interpretSentimentQuota(typeof used === 'number' ? used : null) === 'exhausted') {
-      return NextResponse.json({ error: SENTIMENT_QUOTA_MESSAGE }, { status: 429 });
+      return NextResponse.json(
+        { error: SENTIMENT_QUOTA_ERROR },
+        { status: 429, headers: { 'Retry-After': String(secondsUntilNextUtcDay()) } }
+      );
     }
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;

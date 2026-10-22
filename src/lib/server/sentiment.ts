@@ -5,12 +5,26 @@ const MODEL_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
 
 export { SENTIMENT_CALLS_PER_BOARD_PER_DAY };
 
-/** Client-facing copy. Do not include provider names, status codes, or env var names. */
-export const SENTIMENT_UNAVAILABLE_MESSAGE =
-  "Couldn't get a summary right now. Please try again in a few minutes.";
+/** Machine-readable API codes. The dashboard owns the sentences. */
+export const SENTIMENT_UNAVAILABLE_ERROR = 'summary_unavailable';
+export const SENTIMENT_QUOTA_ERROR = 'summary_daily_limit';
 
-export const SENTIMENT_QUOTA_MESSAGE =
-  "You've used today's 5 summaries. You can get more tomorrow.";
+/**
+ * Seconds until the next 00:00:00 UTC. Rounded up so Retry-After does not
+ * land before the quota actually resets. Minimum 1.
+ */
+export function secondsUntilNextUtcDay(now: Date = new Date()): number {
+  const nextUtcMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0,
+    0,
+    0,
+    0
+  );
+  return Math.max(1, Math.ceil((nextUtcMidnight - now.getTime()) / 1000));
+}
 
 /**
  * Prompt built only from signature notes. Names, emails, images, and user ids

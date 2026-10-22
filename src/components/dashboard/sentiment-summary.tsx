@@ -34,9 +34,15 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         },
         body: JSON.stringify({}),
       });
-      const result = await response.json().catch(() => ({ error: "Sentiment request failed." }));
+      const result = await response.json().catch(() => ({ error: "" }));
       if (!response.ok) {
-        throw new Error(result.error || "Sentiment request failed.");
+        if (result.error === "summary_daily_limit") {
+          throw new Error("You've used today's 5 summaries. You can get more tomorrow.");
+        }
+        if (result.error === "summary_unavailable") {
+          throw new Error("Couldn't get a summary right now. Please try again in a few minutes.");
+        }
+        throw new Error(result.error || "Failed to analyze sentiments. Please try again.");
       }
       setSummary(result.sentimentSummary);
     } catch (e) {

@@ -13,10 +13,11 @@ vi.mock('@/lib/server/supabase', () => ({
 }));
 
 import { POST } from './route';
+import { secondsUntilNextUtcDay } from '@/lib/server/sentiment';
 
 const OWNER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-const UNAVAILABLE = "Couldn't get a summary right now. Please try again in a few minutes.";
-const QUOTA = "You've used today's 5 summaries. You can get more tomorrow.";
+const UNAVAILABLE = 'summary_unavailable';
+const QUOTA = 'summary_daily_limit';
 
 function post() {
   return POST(
@@ -76,7 +77,8 @@ describe('/api/sentiment-summary client errors', () => {
 
     expect(response.status).toBe(503);
     expect(body).toEqual({ error: UNAVAILABLE });
-    expect(JSON.stringify(body)).not.toContain('GOOGLE_API_KEY');
+    expect(response.headers.get('Retry-After')).toBeNull();
+    expect(JSON.stringify(body)).not.toMatch(/GOOGLE_API_KEY|Couldn't|try again/i);
     expect(errorLog.mock.calls.flat().join(' ')).toContain('GOOGLE_API_KEY is not configured');
     expect(createServiceClient).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -95,7 +97,7 @@ describe('/api/sentiment-summary client errors', () => {
 
     expect(response.status).toBe(503);
     expect(body).toEqual({ error: UNAVAILABLE });
-    expect(JSON.stringify(body)).not.toMatch(/leaked-upstream-detail|server-only-key|Gemini|GOOGLE_API_KEY/);
+    expect(JSON.stringify(body)).not.toMatch(/leaked-upstream-detail|server-only-key|Gemini|GOOGLE_API_KEY|Couldn't|try again/i);
     expect(errorLog.mock.calls.flat().join(' ')).toContain('provider request failed with status 500');
     expect(errorLog.mock.calls.flat().join(' ')).not.toContain('server-only-key');
     fetchSpy.mockRestore();
@@ -111,6 +113,13 @@ describe('/api/sentiment-summary client errors', () => {
 
     expect(response.status).toBe(429);
     expect(body).toEqual({ error: QUOTA });
+    const retryAfter = Number(response.headers.get('Retry-After'));
+    const remaining = secondsUntilNextUtcDay();
+    expect(Number.isInteger(retryAfter)).toBe(true);
+    expect(retryAfter).toBeGreaterThanOrEqual(remaining);
+    expect(retryAfter).toBeLessThanOrEqual(remaining + 2);
+    expect(retryAfter).toBeLessThanOrEqual(86400);
+    expect(JSON.stringify(body)).not.toMatch(/You've|tomorrow|summaries/);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });

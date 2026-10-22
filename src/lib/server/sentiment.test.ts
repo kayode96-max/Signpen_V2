@@ -12,6 +12,7 @@ import {
   buildSentimentPrompt,
   interpretSentimentQuota,
   notesFromRows,
+  secondsUntilNextUtcDay,
 } from '@/lib/server/sentiment';
 import { interpretTurnstile } from '@/lib/server/turnstile';
 
@@ -38,6 +39,12 @@ describe('buildSentimentPrompt', () => {
 });
 
 describe('sentiment quota and model name', () => {
+  it('counts whole seconds until the next UTC midnight', () => {
+    expect(secondsUntilNextUtcDay(new Date('2026-10-22T00:00:00.000Z'))).toBe(86400);
+    expect(secondsUntilNextUtcDay(new Date('2026-10-22T23:00:00.000Z'))).toBe(3600);
+    expect(secondsUntilNextUtcDay(new Date('2026-10-22T23:59:59.200Z'))).toBe(1);
+  });
+
   it('treats a null reservation as the daily limit', () => {
     expect(SENTIMENT_CALLS_PER_BOARD_PER_DAY).toBe(5);
     expect(interpretSentimentQuota(null)).toBe('exhausted');
