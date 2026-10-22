@@ -1,16 +1,19 @@
 /**
  * Limits shared by the API and the SQL backstop.
- * ASSUMPTION: the live product has not published these numbers. The SQL in
- * supabase/migrations/0002_rls.sql hard-codes the same ceilings. Change both.
+ * The SQL in supabase/migrations/0002_rls.sql hard-codes the same ceilings.
+ * Change both.
  */
 
-/** One device session can sign a board once (unique constraint). This is the extra network cap. */
-export const SIGNATURES_PER_IP_PER_BOARD_PER_DAY = 10;
+/**
+ * Hashed IP signatures on one board in a rolling hour.
+ * Past this, the signer must pass Turnstile. There is no cross-board cap.
+ */
+export const SIGNATURES_PER_IP_PER_BOARD_PER_HOUR = 100;
 
-/** Across every board, from one hashed IP, per rolling 24 hours. */
-export const SIGNATURES_PER_IP_PER_DAY = 30;
+export const SIGNATURE_IP_WINDOW_HOURS = 1;
 
-export const SIGNATURE_IP_WINDOW_HOURS = 24;
+/** Feedback posts from one hashed IP in a rolling hour, after Turnstile. */
+export const FEEDBACK_PER_IP_PER_HOUR = 5;
 
 /** Hashed IP rows are deleted after this many days. See purge_old_signed_ips(). */
 export const SIGNED_IP_RETENTION_DAYS = 30;

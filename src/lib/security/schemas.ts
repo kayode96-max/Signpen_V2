@@ -66,9 +66,19 @@ export const signatureRequestSchema = z.object({
   }),
   /**
    * Signer choice: only the graduate sees this signature.
-   * hidden_by_owner is intentionally absent. Only the board owner can set it.
+   * hidden_by_owner is intentionally absent. Only the board owner can set it,
+   * and the owner cannot change private_by_signer.
    */
   privateBySigner: z.boolean().optional(),
+  /**
+   * Sent only after GET /api/signatures/challenge reports challenge_required.
+   * A blank value is treated as absent. The server checks it with
+   * TURNSTILE_SECRET_KEY once the hourly board cap is reached.
+   */
+  turnstileToken: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().trim().min(1).max(2048).optional()
+  ),
 });
 
 export type SignatureRequest = z.infer<typeof signatureRequestSchema>;

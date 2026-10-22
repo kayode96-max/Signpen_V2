@@ -23,12 +23,15 @@ declare global {
 
 /**
  * Cloudflare Turnstile. The site key is public (NEXT_PUBLIC_TURNSTILE_SITE_KEY).
- * The secret (TURNSTILE_SECRET_KEY) is checked only in /api/feedback.
+ * The secret (TURNSTILE_SECRET_KEY) is checked only on the server, by
+ * /api/feedback and by /api/signatures once an IP is over the hourly board cap.
  */
 export default function TurnstileWidget({
   onToken,
+  unavailableMessage = 'Feedback posting is unavailable until NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured.',
 }: {
   onToken: (token: string | null) => void;
+  unavailableMessage?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
@@ -61,9 +64,7 @@ export default function TurnstileWidget({
 
   if (!siteKey) {
     return (
-      <p className="text-sm text-yellow-400">
-        Feedback posting is unavailable until NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured.
-      </p>
+      <p className="text-sm text-yellow-400">{unavailableMessage}</p>
     );
   }
 

@@ -17,6 +17,7 @@ import {
   DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import InstructionDialog from "./instruction-dialog";
+import TurnstileWidget from "@/components/contact/turnstile-widget";
 import dynamic from "next/dynamic";
 import type { ExistingSignature } from "@/components/3d/TShirtCanvas";
 import type { SignaturePlacementPayload } from "@/components/3d/TShirtSigningModal";
@@ -68,6 +69,8 @@ export default function PublicSignOutPage() {
   const [sigName, setSigName] = useState("");
   const [sigNote, setSigNote] = useState("");
   const [onlyGraduate, setOnlyGraduate] = useState(false);
+  const [challengeRequired, setChallengeRequired] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   // 3-D modal
   const [showModal, setShowModal] = useState(false);
@@ -108,14 +111,33 @@ export default function PublicSignOutPage() {
     return () => document.documentElement.classList.remove("dark");
   }, []);
 
+  const loadChallenge = async () => {
+    try {
+      const res = await fetch(`/api/signatures/challenge?studentId=${encodeURIComponent(studentId)}`);
+      const data = await res.json().catch(() => ({}));
+      setChallengeRequired(data.challenge_required === true);
+    } catch {
+      setChallengeRequired(false);
+    }
+  };
+
   const handleOpenInfo = () => {
     if (hasAlreadySigned || isCheckingIp) return;
     setInfoOpen(true);
+    void loadChallenge();
   };
 
   const handleOpenModal = () => {
     if (!sigName.trim() || !sigNote.trim()) {
       toast({ variant: "destructive", title: "Missing Information", description: "Please fill in your name and note." });
+      return;
+    }
+    if (challengeRequired && !turnstileToken) {
+      toast({
+        variant: "destructive",
+        title: "Check required",
+        description: "Complete the spam check before signing.",
+      });
       return;
     }
     setInfoOpen(false);
@@ -144,12 +166,20 @@ export default function PublicSignOutPage() {
           signatoryNote: sigNote,
           position: payload.position,
           privateBySigner: onlyGraduate,
+          ...(turnstileToken ? { turnstileToken } : {}),
         }),
       });
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({ error: "Submission failed." }));
         if (response.status === 409) setHasAlreadySigned(true);
+        if (response.status === 429 && payload.error === "challenge_required") {
+          setChallengeRequired(true);
+          setTurnstileToken(null);
+          setShowModal(false);
+          setInfoOpen(true);
+          throw new Error("Complete the spam check to keep signing from this network.");
+        }
         throw new Error(payload.error || "Submission failed.");
       }
 
@@ -326,6 +356,12 @@ export default function PublicSignOutPage() {
               />
               <span>Only the graduate sees this</span>
             </label>
+            {challengeRequired && (
+              <TurnstileWidget
+                onToken={setTurnstileToken}
+                unavailableMessage="Signing from this network needs the spam check, and NEXT_PUBLIC_TURNSTILE_SITE_KEY is not configured."
+              />
+            )}
           </div>
           <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-white/5 flex-shrink-0 flex flex-col sm:flex-row justify-end">
             <DialogClose asChild>

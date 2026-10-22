@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientIp } from '@/lib/security/ip-hash';
-import { createSignature, type SignatureWriteArgs } from '@/lib/server/signatures';
+import { createSignature, type SignatureWriteArgs, type TurnstileCheck } from '@/lib/server/signatures';
 import { requireRequestUser } from '@/lib/server/session';
 import { createServiceClient, MissingServerConfigError } from '@/lib/server/supabase';
+import { verifyTurnstileToken } from '@/lib/server/turnstile';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
  * Anonymous sessions may sign. Inserts run as the service role through
- * public.insert_signature, which also enforces one signature per session
- * and the hashed-IP rate limit. The raw IP is hashed here and discarded.
+ * public.insert_signature. That function allows 100 signatures per hashed IP
+ * per board per rolling hour and then raises challenge_required. A verified
+ * Turnstile token is the only way past that cap. There is no cross-board cap.
+ * The raw IP is hashed here and discarded.
  */
 export async function POST(req: NextRequest) {
   let raw: unknown;
@@ -29,6 +32,7 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       ip: getClientIp(req.headers),
       salt: process.env.IP_HASH_SALT,
+      verifyTurnstile: (token) => checkTurnstile(token, getClientIp(req.headers)),
       write: async (args: SignatureWriteArgs) => {
         const { data, error } = await service.rpc('insert_signature', args);
         if (error) return { ok: false as const, code: error.code, message: error.message };
@@ -49,4 +53,12 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function checkTurnstile(token: string, ip: string | null): Promise<TurnstileCheck> {
+  const verdict = await verifyTurnstileToken(token, ip);
+  if (verdict.ok) return 'valid';
+  if (verdict.status === 400) return 'invalid';
+  console.error('signature challenge verification failed:', verdict.error);
+  return 'unavailable';
 }

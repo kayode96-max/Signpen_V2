@@ -44,14 +44,39 @@ function query(result: { data: unknown; error: { code?: string } | null }) {
   return builder;
 }
 
-function boardWithNotes(quota: { data: number | null; error: { code?: string } | null }) {
+function boardWithNotes(handlers?: {
+  usage?: number | null;
+  consume?: number | null;
+  consumeError?: { code?: string } | null;
+  usageError?: { code?: string } | null;
+}) {
+  const rpc = vi.fn(async (name: string) => {
+    if (name === 'sentiment_usage_today') {
+      return { data: handlers?.usage ?? 0, error: handlers?.usageError ?? null };
+    }
+    if (name === 'consume_sentiment_call') {
+      return {
+        data: handlers && 'consume' in handlers ? handlers.consume : 1,
+        error: handlers?.consumeError ?? null,
+      };
+    }
+    return { data: null, error: { code: 'unexpected' } };
+  });
   createServiceClient.mockReturnValue({
     from(table: string) {
       if (table === 'students') return query({ data: { id: OWNER }, error: null });
       return query({ data: [{ signatoryNote: 'So proud of you' }], error: null });
     },
-    rpc: vi.fn().mockResolvedValue(quota),
+    rpc,
   });
+  return rpc;
+}
+
+function summaryResponse(text: string) {
+  return new Response(
+    JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }),
+    { status: 200, headers: { 'content-type': 'application/json' } }
+  );
 }
 
 describe('/api/sentiment-summary client errors', () => {
@@ -85,9 +110,9 @@ describe('/api/sentiment-summary client errors', () => {
     fetchSpy.mockRestore();
   });
 
-  it('hides a provider failure behind the same 503', async () => {
+  it('hides a provider failure behind the same 503 and does not spend a slot', async () => {
     vi.stubEnv('GOOGLE_API_KEY', 'server-only-key');
-    boardWithNotes({ data: 1, error: null });
+    const rpc = boardWithNotes({ usage: 1 });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('API key leaked-upstream-detail', { status: 500 })
     );
@@ -100,12 +125,33 @@ describe('/api/sentiment-summary client errors', () => {
     expect(JSON.stringify(body)).not.toMatch(/leaked-upstream-detail|server-only-key|Gemini|GOOGLE_API_KEY|Couldn't|try again/i);
     expect(errorLog.mock.calls.flat().join(' ')).toContain('provider request failed with status 500');
     expect(errorLog.mock.calls.flat().join(' ')).not.toContain('server-only-key');
+    expect(rpc.mock.calls.map((call) => call[0])).toEqual(['sentiment_usage_today']);
+    fetchSpy.mockRestore();
+  });
+
+  it('counts a slot only after Gemini returns a summary', async () => {
+    vi.stubEnv('GOOGLE_API_KEY', 'server-only-key');
+    const rpc = boardWithNotes({ usage: 4, consume: 5 });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(summaryResponse('Warm and proud.'));
+
+    const response = await post();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ sentimentSummary: 'Warm and proud.' });
+    expect(rpc.mock.calls.map((call) => call[0])).toEqual([
+      'sentiment_usage_today',
+      'consume_sentiment_call',
+    ]);
+    const consumeOrder = rpc.mock.invocationCallOrder[1];
+    const fetchOrder = fetchSpy.mock.invocationCallOrder[0];
+    expect(fetchOrder).toBeLessThan(consumeOrder);
     fetchSpy.mockRestore();
   });
 
   it('tells the owner when the board has used its 5 summaries today', async () => {
     vi.stubEnv('GOOGLE_API_KEY', 'server-only-key');
-    boardWithNotes({ data: null, error: null });
+    const rpc = boardWithNotes({ usage: 5 });
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     const response = await post();
@@ -121,6 +167,22 @@ describe('/api/sentiment-summary client errors', () => {
     expect(retryAfter).toBeLessThanOrEqual(86400);
     expect(JSON.stringify(body)).not.toMatch(/You've|tomorrow|summaries/);
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.map((call) => call[0])).toEqual(['sentiment_usage_today']);
+    fetchSpy.mockRestore();
+  });
+
+  it('does not return a sixth summary when a concurrent call takes the last slot', async () => {
+    vi.stubEnv('GOOGLE_API_KEY', 'server-only-key');
+    const rpc = boardWithNotes({ usage: 4, consume: null });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(summaryResponse('Too late.'));
+
+    const response = await post();
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body).toEqual({ error: QUOTA });
+    expect(JSON.stringify(body)).not.toContain('Too late.');
+    expect(rpc.mock.calls.map((call) => call[0])).toContain('consume_sentiment_call');
     fetchSpy.mockRestore();
   });
 });

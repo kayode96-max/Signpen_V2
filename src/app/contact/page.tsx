@@ -129,7 +129,10 @@ export default function ContactPage() {
         });
         const payload = await response.json().catch(() => ({ error: 'Submission failed.' }));
         if (!response.ok) {
-          throw new Error(payload.error || 'Submission failed.');
+          const description = payload.error === 'feedback_rate_limited'
+            ? 'Too many messages from this network. Please try again in a little while.'
+            : (payload.error || 'Submission failed.');
+          throw new Error(description);
         }
 
         setIsSuccess(true);

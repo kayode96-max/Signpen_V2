@@ -24,6 +24,12 @@ describe('signatureRequestSchema', () => {
     const parsed = signatureRequestSchema.parse(validSignature);
     expect(parsed.position).toEqual({ x: 0, y: 100 });
     expect(parsed.signatoryName).toBe('Ada Lovelace');
+    expect(parsed.turnstileToken).toBeUndefined();
+  });
+
+  it('keeps a Turnstile token and treats a blank one as absent', () => {
+    expect(signatureRequestSchema.parse({ ...validSignature, turnstileToken: '  abc  ' }).turnstileToken).toBe('abc');
+    expect(signatureRequestSchema.parse({ ...validSignature, turnstileToken: '   ' }).turnstileToken).toBeUndefined();
   });
 
   it('trims the name and note and drops owner-only fields', () => {

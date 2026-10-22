@@ -8,6 +8,7 @@ import {
   interpretSentimentQuota,
   notesFromRows,
   secondsUntilNextUtcDay,
+  sentimentQuotaOpen,
   SENTIMENT_QUOTA_ERROR,
   SENTIMENT_UNAVAILABLE_ERROR,
 } from '@/lib/server/sentiment';
@@ -19,8 +20,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Board owners only. Notes are loaded from that owner's signatures.
  * The request body cannot supply the text sent to Gemini.
- * Quota: 5 calls per board per UTC day. A call is counted before the
- * provider runs so a failing key cannot be retried without limit.
+ * Quota: 5 successful summaries per board per UTC day. The count is read
+ * first and incremented only after Gemini returns a summary, so a 503 does
+ * not consume a slot. consume_sentiment_call stops the counter at 5.
  * Provider and config failures are logged here and returned as summary_unavailable.
  * The daily cap is summary_daily_limit plus Retry-After until the next UTC midnight.
  * Neither body contains user-facing copy.
@@ -108,14 +110,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: used, error: quotaError } = await service.rpc('consume_sentiment_call', {
+    const { data: usedToday, error: usageError } = await service.rpc('sentiment_usage_today', {
       p_student_id: access.userId,
     });
-
-    if (quotaError) {
-      return unavailable(`failed to record sentiment usage (${quotaError.code ?? 'unknown'})`);
+    if (usageError) {
+      return unavailable(`failed to read sentiment usage (${usageError.code ?? 'unknown'})`);
     }
-    if (interpretSentimentQuota(typeof used === 'number' ? used : null) === 'exhausted') {
+    if (!sentimentQuotaOpen(typeof usedToday === 'number' ? usedToday : null)) {
       return NextResponse.json(
         { error: SENTIMENT_QUOTA_ERROR },
         { status: 429, headers: { 'Retry-After': String(secondsUntilNextUtcDay()) } }
@@ -140,6 +141,19 @@ export async function POST(req: NextRequest) {
     const summary = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!summary) {
       return unavailable('provider returned an empty summary');
+    }
+
+    const { data: used, error: quotaError } = await service.rpc('consume_sentiment_call', {
+      p_student_id: access.userId,
+    });
+    if (quotaError) {
+      return unavailable(`failed to record sentiment usage (${quotaError.code ?? 'unknown'})`);
+    }
+    if (interpretSentimentQuota(typeof used === 'number' ? used : null) === 'exhausted') {
+      return NextResponse.json(
+        { error: SENTIMENT_QUOTA_ERROR },
+        { status: 429, headers: { 'Retry-After': String(secondsUntilNextUtcDay()) } }
+      );
     }
 
     return NextResponse.json({ sentimentSummary: summary });

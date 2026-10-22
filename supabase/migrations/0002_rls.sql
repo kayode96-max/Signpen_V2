@@ -22,7 +22,8 @@
 -- Signature inserts happen only through insert_signature(), granted to
 -- service_role. The Next.js route calls it with SUPABASE_SERVICE_ROLE_KEY.
 --
--- Hashed IP rows: purge_old_signed_ips() deletes rows older than 30 days.
+-- Hashed IP rows: purge_old_signed_ips() deletes signature and feedback hash
+-- rows older than 30 days.
 -- This migration does not enable pg_cron and does not schedule the job
 -- (that would touch a live project as a side effect). After enabling the
 -- pg_cron extension in the Supabase dashboard (Database → Extensions), run
@@ -121,6 +122,7 @@ alter table public.signature_signers      enable row level security;
 alter table public.signed_ips             enable row level security;
 alter table public.thank_you_cards        enable row level security;
 alter table public.feedback               enable row level security;
+alter table public.feedback_ip_hashes     enable row level security;
 alter table public.sentiment_daily_usage  enable row level security;
 
 alter table public.students               force row level security;
@@ -129,6 +131,7 @@ alter table public.signature_signers      force row level security;
 alter table public.signed_ips             force row level security;
 alter table public.thank_you_cards        force row level security;
 alter table public.feedback               force row level security;
+alter table public.feedback_ip_hashes     force row level security;
 alter table public.sentiment_daily_usage  force row level security;
 
 -- ASSUMPTION: any policy created by hand in the dashboard on these tables
@@ -209,6 +212,47 @@ alter function public.get_student_public(uuid) owner to postgres;
 revoke all on function public.get_student_public(uuid) from public, anon, authenticated;
 grant execute on function public.get_student_public(uuid) to anon, authenticated;
 
+-- Public signatures for one board. Both privacy flags must be false.
+-- Creation time is "timestamp" (the table has no createdAt column).
+-- Signer ids and IP hashes are not in this result. The browser select
+-- policy stays, because realtime postgres_changes needs table select.
+-- That policy is a known gap: anon can read public rows across boards.
+create or replace function public.get_board_signatures(p_id uuid)
+returns table (
+  id uuid,
+  "studentId" uuid,
+  "signatureImageUrl" text,
+  "signatoryName" text,
+  "signatoryNote" text,
+  position jsonb,
+  "timestamp" timestamptz
+)
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select
+    s.id,
+    s."studentId",
+    s."signatureImageUrl",
+    s."signatoryName",
+    s."signatoryNote",
+    s.position,
+    s."timestamp"
+  from public.signatures s
+  where s."studentId" = p_id
+    and p_id is not null
+    and s.private_by_signer = false
+    and s.hidden_by_owner = false
+  order by s."timestamp" asc;
+$$;
+
+alter function public.get_board_signatures(uuid) owner to postgres;
+
+revoke all on function public.get_board_signatures(uuid) from public, anon, authenticated;
+grant execute on function public.get_board_signatures(uuid) to anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- signature_signers and signed_ips and sentiment usage: service role only.
 -- RLS on, zero policies, grants revoked. service_role has BYPASSRLS and keeps
@@ -216,6 +260,7 @@ grant execute on function public.get_student_public(uuid) to anon, authenticated
 -- ---------------------------------------------------------------------------
 revoke all on table public.signature_signers from public, anon, authenticated;
 revoke all on table public.signed_ips from public, anon, authenticated;
+revoke all on table public.feedback_ip_hashes from public, anon, authenticated;
 revoke all on table public.sentiment_daily_usage from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -226,6 +271,11 @@ revoke all on table public.sentiment_daily_usage from public, anon, authenticate
 -- the 24 hour edit window, so a private note does not vanish from their
 -- session. ASSUMPTION: that self-read is acceptable.
 -- Inserts: no policy and no grant. insert_signature() is the only writer.
+-- KNOWN GAP: signatures_select lets anon select every public signature row
+-- with no board filter, which exposes board ids. Realtime postgres_changes
+-- needs that table select, so the policy stays. The follow-up moves live
+-- updates to Realtime broadcast and revokes anon table select. Until then,
+-- get_board_signatures(p_id) is the filtered read.
 -- ---------------------------------------------------------------------------
 revoke all on table public.signatures from public, anon, authenticated;
 grant select on table public.signatures to anon, authenticated;
@@ -268,9 +318,11 @@ create policy signatures_signer_delete on public.signatures
   for delete to authenticated
   using (public.signer_can_modify(id));
 
--- Blocks signers from setting hidden_by_owner, and blocks everyone except
--- the service role / migration owner from rewriting identity columns.
--- Column grants already omit studentId and timestamp. This is the backstop.
+-- The owner may set hidden_by_owner and nothing about private_by_signer.
+-- Only the signer, inside signer_can_modify's 24 hour window, may change
+-- private_by_signer. Signers cannot set hidden_by_owner. Identity columns
+-- stay immutable. Column grants cannot tell the owner from the signer
+-- (both are role authenticated), so this trigger is the enforcement.
 create or replace function public.tg_signatures_guard()
 returns trigger
 language plpgsql
@@ -289,6 +341,9 @@ begin
   end if;
 
   if old."studentId" = auth.uid() and public.is_real_user() then
+    if new.private_by_signer is distinct from old.private_by_signer then
+      raise exception 'only the signer can change private_by_signer';
+    end if;
     return new;
   end if;
 
@@ -361,14 +416,16 @@ grant select on table public.feedback_public to anon, authenticated;
 -- ---------------------------------------------------------------------------
 -- insert_signature: one transaction for the signature, the signer link, and
 -- the hashed-IP log. Unique (studentId, signerUserId) makes the one-per-session
--- rule race-free. An advisory lock on the hash makes the soft IP cap race-free
--- for that network.
--- Ceilings match src/lib/security/limits.ts:
---   10 signatures per hashed IP per board per 24 hours
---   30 signatures per hashed IP across boards per 24 hours
--- ASSUMPTION: those caps are loose enough for a shared campus NAT.
+-- rule race-free. An advisory lock on the board and hash makes the hourly
+-- cap race-free for that network on that board.
+-- Ceiling matches src/lib/security/limits.ts:
+--   100 signatures per hashed IP per board per rolling hour.
+-- There is no cross-board cap. At or over 100, the function raises
+-- challenge_required unless p_challenge_passed is true (the API sets that
+-- only after TURNSTILE_SECRET_KEY accepts a token). The IP row is still
+-- written, so later signatures in the hour still need a token.
 -- Deleting a signature removes the signer link, so that session may sign
--- again. The IP row remains and still counts toward the soft cap.
+-- again. The IP row remains and still counts toward the hour.
 -- ---------------------------------------------------------------------------
 create or replace function public.insert_signature(
   p_student_id uuid,
@@ -378,7 +435,8 @@ create or replace function public.insert_signature(
   p_note text,
   p_position jsonb,
   p_private boolean,
-  p_ip_hash text
+  p_ip_hash text,
+  p_challenge_passed boolean
 ) returns uuid
 language plpgsql
 security definer
@@ -387,7 +445,6 @@ as $$
 declare
   new_id uuid;
   board_hits integer;
-  global_hits integer;
 begin
   if p_signer_user_id is null then
     raise exception 'signer_required' using errcode = '23502';
@@ -400,25 +457,16 @@ begin
     raise exception 'board_not_found' using errcode = 'P0002';
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_ip_hash, 0));
+  perform pg_advisory_xact_lock(hashtextextended(p_student_id::text || ':' || p_ip_hash, 0));
 
   select count(*)::integer into board_hits
   from public.signed_ips
   where "studentId" = p_student_id
     and "ipHash" = p_ip_hash
-    and "signedAt" > now() - interval '24 hours';
+    and "signedAt" > now() - interval '1 hour';
 
-  if board_hits >= 10 then
-    raise exception 'rate_limited' using errcode = 'P0004';
-  end if;
-
-  select count(*)::integer into global_hits
-  from public.signed_ips
-  where "ipHash" = p_ip_hash
-    and "signedAt" > now() - interval '24 hours';
-
-  if global_hits >= 30 then
-    raise exception 'rate_limited' using errcode = 'P0004';
+  if board_hits >= 100 and coalesce(p_challenge_passed, false) = false then
+    raise exception 'challenge_required' using errcode = 'P0004';
   end if;
 
   insert into public.signatures (
@@ -453,19 +501,65 @@ exception
 end;
 $$;
 
-alter function public.insert_signature(uuid, uuid, text, text, text, jsonb, boolean, text) owner to postgres;
+alter function public.insert_signature(uuid, uuid, text, text, text, jsonb, boolean, text, boolean) owner to postgres;
 
-revoke all on function public.insert_signature(uuid, uuid, text, text, text, jsonb, boolean, text)
+revoke all on function public.insert_signature(uuid, uuid, text, text, text, jsonb, boolean, text, boolean)
   from public, anon, authenticated;
-grant execute on function public.insert_signature(uuid, uuid, text, text, text, jsonb, boolean, text)
+grant execute on function public.insert_signature(uuid, uuid, text, text, text, jsonb, boolean, text, boolean)
   to service_role;
 
+-- Boolean only. The count and the hash are arguments, not results.
+-- Same window and ceiling as insert_signature. Service role only: the
+-- Next.js route hashes the IP and returns { challenge_required } to the browser.
+create or replace function public.signature_challenge_required(
+  p_student_id uuid,
+  p_ip_hash text
+) returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select count(*) >= 100
+  from public.signed_ips
+  where "studentId" = p_student_id
+    and "ipHash" = p_ip_hash
+    and "signedAt" > now() - interval '1 hour';
+$$;
+
+alter function public.signature_challenge_required(uuid, text) owner to postgres;
+
+revoke all on function public.signature_challenge_required(uuid, text) from public, anon, authenticated;
+grant execute on function public.signature_challenge_required(uuid, text) to service_role;
+
 -- ---------------------------------------------------------------------------
--- Sentiment quota. 5 calls per board per UTC day.
+-- Sentiment quota. 5 successful summaries per board per UTC day.
 -- Keep the literal 5 in sync with SENTIMENT_CALLS_PER_BOARD_PER_DAY.
--- When the update WHERE fails, no row is returned and the function yields null.
--- The API treats null as 429 and does not call Gemini.
+-- sentiment_usage_today does not increment. The API calls
+-- consume_sentiment_call only after Gemini returns a summary, so a 503
+-- does not consume a slot. The UPDATE WHERE calls < 5 stops two concurrent
+-- successes at 5. When that WHERE matches nothing, the function returns null.
 -- ---------------------------------------------------------------------------
+create or replace function public.sentiment_usage_today(p_student_id uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select coalesce((
+    select calls
+    from public.sentiment_daily_usage
+    where "studentId" = p_student_id
+      and day = (timezone('utc', now()))::date
+  ), 0);
+$$;
+
+alter function public.sentiment_usage_today(uuid) owner to postgres;
+
+revoke all on function public.sentiment_usage_today(uuid) from public, anon, authenticated;
+grant execute on function public.sentiment_usage_today(uuid) to service_role;
+
 create or replace function public.consume_sentiment_call(p_student_id uuid)
 returns integer
 language plpgsql
@@ -495,7 +589,77 @@ revoke all on function public.consume_sentiment_call(uuid) from public, anon, au
 grant execute on function public.consume_sentiment_call(uuid) to service_role;
 
 -- ---------------------------------------------------------------------------
--- Retention: hashed IP rows older than 30 days.
+-- Feedback insert plus the hashed-IP cap. 5 posts per hashed IP per rolling
+-- hour, on top of the Turnstile check in /api/feedback. The lock serializes
+-- one hash. Over the cap, nothing is inserted and retry_after is the number
+-- of seconds until fewer than 5 rows remain in the window (the row at
+-- offset hits-5, oldest first). Keep the literal 5 in sync with
+-- FEEDBACK_PER_IP_PER_HOUR.
+-- ---------------------------------------------------------------------------
+create or replace function public.insert_feedback(
+  p_name text,
+  p_email text,
+  p_message text,
+  p_type text,
+  p_rating smallint,
+  p_ip_hash text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  hits integer;
+  retry_after integer;
+  new_id uuid;
+begin
+  if p_ip_hash is null or char_length(p_ip_hash) < 32 then
+    raise exception 'ip_hash_required' using errcode = '23502';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_ip_hash, 0));
+
+  select count(*)::integer into hits
+  from public.feedback_ip_hashes
+  where "ipHash" = p_ip_hash
+    and "createdAt" > now() - interval '1 hour';
+
+  if hits >= 5 then
+    select ceil(extract(epoch from ("createdAt" + interval '1 hour' - now())))::integer
+    into retry_after
+    from public.feedback_ip_hashes
+    where "ipHash" = p_ip_hash
+      and "createdAt" > now() - interval '1 hour'
+    order by "createdAt" asc
+    offset (hits - 5)
+    limit 1;
+
+    return jsonb_build_object(
+      'limited', true,
+      'retry_after', greatest(coalesce(retry_after, 1), 1)
+    );
+  end if;
+
+  insert into public.feedback (name, email, message, type, rating)
+  values (p_name, p_email, p_message, p_type, p_rating)
+  returning id into new_id;
+
+  insert into public.feedback_ip_hashes ("ipHash")
+  values (p_ip_hash);
+
+  return jsonb_build_object('limited', false, 'id', new_id);
+end;
+$$;
+
+alter function public.insert_feedback(text, text, text, text, smallint, text) owner to postgres;
+
+revoke all on function public.insert_feedback(text, text, text, text, smallint, text)
+  from public, anon, authenticated;
+grant execute on function public.insert_feedback(text, text, text, text, smallint, text)
+  to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Retention: hashed IP rows older than 30 days, for signatures and feedback.
 -- Schedule with pg_cron using the statement in the header. Not scheduled here.
 -- ---------------------------------------------------------------------------
 create or replace function public.purge_old_signed_ips()
@@ -505,12 +669,18 @@ security definer
 set search_path = pg_catalog, public
 as $$
 declare
-  deleted_count integer;
+  signed_deleted integer;
+  feedback_deleted integer;
 begin
   delete from public.signed_ips
   where "signedAt" < now() - interval '30 days';
-  get diagnostics deleted_count = row_count;
-  return deleted_count;
+  get diagnostics signed_deleted = row_count;
+
+  delete from public.feedback_ip_hashes
+  where "createdAt" < now() - interval '30 days';
+  get diagnostics feedback_deleted = row_count;
+
+  return signed_deleted + feedback_deleted;
 end;
 $$;
 

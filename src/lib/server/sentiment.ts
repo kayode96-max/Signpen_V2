@@ -60,6 +60,15 @@ export function interpretSentimentQuota(count: number | null): 'ok' | 'exhausted
   return 'ok';
 }
 
+/** True when another successful summary may still be counted today. */
+export function sentimentQuotaOpen(usedToday: number | null | undefined): boolean {
+  return (
+    typeof usedToday === 'number' &&
+    Number.isFinite(usedToday) &&
+    usedToday < SENTIMENT_CALLS_PER_BOARD_PER_DAY
+  );
+}
+
 export function assertGeminiModel(model: string): string {
   if (!MODEL_PATTERN.test(model)) {
     throw new Error('GEMINI_MODEL contains unsupported characters.');

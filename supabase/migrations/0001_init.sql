@@ -99,8 +99,9 @@ create index if not exists signature_signers_user_idx
 -- ---------------------------------------------------------------------------
 -- signed_ips: hashed-IP rate-limit log. Raw IPs are never stored.
 -- The old shape (one row per plaintext IP, primary key studentId+ipAddress)
--- is replaced. Multiple sessions may share an IP up to the soft limit in
--- insert_signature (0002). Service role only (0002).
+-- is replaced. One hashed IP may sign a board 100 times per rolling hour
+-- (insert_signature in 0002). Past that, the API requires Turnstile. There
+-- is no cross-board cap. Service role only (0002).
 -- ASSUMPTION: ipHash is hex HMAC-SHA256 (64 chars) produced with IP_HASH_SALT.
 -- ---------------------------------------------------------------------------
 create table if not exists public.signed_ips (
@@ -154,7 +155,21 @@ create table if not exists public.feedback (
 
 create index if not exists feedback_created_idx on public.feedback (created_at desc);
 
--- Per-board Gemini quota. 5 successful reservations per UTC day (0002).
+-- Hashed-IP log for the feedback rate limit (5 per rolling hour, 0002).
+-- Raw IPs are never stored. Service role only. Purged with signed_ips.
+create table if not exists public.feedback_ip_hashes (
+  id           uuid primary key default gen_random_uuid(),
+  "ipHash"     text not null check (char_length("ipHash") between 32 and 128),
+  "createdAt"  timestamptz not null default now()
+);
+
+create index if not exists feedback_ip_hashes_hash_time_idx
+  on public.feedback_ip_hashes ("ipHash", "createdAt" desc);
+create index if not exists feedback_ip_hashes_created_idx
+  on public.feedback_ip_hashes ("createdAt");
+
+-- Per-board Gemini quota. 5 successful summaries per UTC day (0002).
+-- A failed provider call does not increment calls.
 create table if not exists public.sentiment_daily_usage (
   "studentId"  uuid not null references public.students (id) on delete cascade,
   day          date not null,
