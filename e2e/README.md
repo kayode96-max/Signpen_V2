@@ -63,6 +63,8 @@ Public pages (`/`, `/contact`, `/login`) on desktop Chromium, Pixel 5, and iPhon
 
 Unknown students (fixed slug, random UUID, long garbage id): server HTTP 404, not 200 and not 500. Expected to fail until the server returns 404.
 
+Board cache, from the ruling on PR #17. An id that is neither a UUID nor a slug (`^[a-z0-9]+(-[a-z0-9]+)*$`, 3 to 30 characters), including an 80-character id and a 2048-character id, returns 404 with a short public cache (`s-maxage` of about 60). A valid but unknown UUID, and a valid but unknown slug such as `qa-unknown-2026`, return 404 with `Cache-Control` containing `no-store`. Those checks are expected to fail on main until #17 lands. An error from the board page or `GET /api/boards/[studentId]/signatures` must also send `no-store`. That case is skipped unless `SUPABASE_PREVIEW_URL` is set, and it stays `test.fixme` until a failure can be forced.
+
 `/contact` privacy: feedback responses must not include an `email` field, and the page must not request `signed_ips`. Expected to fail when that leak is present (the email leak is on production today).
 
 Perf baseline: `/`, `/contact`, `/login`, and the board page when `TEST_STUDENT_URL` is set, on desktop Chromium, Pixel 5, and iPhone 12. Report-only unless budgets are enforced.
