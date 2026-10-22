@@ -25,6 +25,16 @@ export type PerfSample = {
   throttlingNote?: string;
   cpuThrottle: number | null;
   fcpMs: number | null;
+  /** Bytes on the wire by the time first contentful paint fires. */
+  firstViewBytes: number;
+  /**
+   * Largest request that finished before first contentful paint.
+   * The hero video and scene.bin are omitted so they cannot trip the 300 KB cap.
+   */
+  largestFirstViewFileBytes: number;
+  /** Requests that finished before first contentful paint. */
+  firstViewResources: PerfResource[];
+  /** Bytes for the full load, including assets that finish after first paint. */
   transferredBytes: number;
   requestCount: number;
   bytesSource: 'cdp' | 'resource-timing';
@@ -39,7 +49,7 @@ export type PerfBaseline = {
   generatedAt: string;
   baseURL: string;
   enforced: boolean;
-  budgets: { fcpMs: number; transferredBytes: number };
+  budgets: { fcpMs: number; firstViewBytes: number; firstViewFileBytes: number };
   samples: PerfSample[];
 };
 
@@ -81,7 +91,7 @@ export function safeResourceUrl(raw: string): string {
   }
 }
 
-export function topResources(entries: { url: string; bytes: number }[]): PerfResource[] {
+export function aggregateResources(entries: { url: string; bytes: number }[]): PerfResource[] {
   const totals = new Map<string, number>();
   for (const entry of entries) {
     const url = safeResourceUrl(entry.url);
@@ -89,8 +99,39 @@ export function topResources(entries: { url: string; bytes: number }[]): PerfRes
   }
   return [...totals.entries()]
     .map(([url, bytes]) => ({ url, bytes }))
-    .sort((a, b) => b.bytes - a.bytes || a.url.localeCompare(b.url))
-    .slice(0, 5);
+    .sort((a, b) => b.bytes - a.bytes || a.url.localeCompare(b.url));
+}
+
+export function topResources(entries: { url: string; bytes: number }[]): PerfResource[] {
+  return aggregateResources(entries).slice(0, 5);
+}
+
+/** Later loads. They have their own budget and never count toward the 300 KB first-view file cap. */
+export function isDeferredAsset(url: string): boolean {
+  const pathname = safeResourceUrl(url).toLowerCase();
+  return pathname.endsWith('/vid1.mp4') || pathname.endsWith('/scene.bin');
+}
+
+export function emptyFirstView(): Pick<PerfSample, 'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'> {
+  return { firstViewBytes: 0, largestFirstViewFileBytes: 0, firstViewResources: [] };
+}
+
+/** Sum finished first-view requests. Deferred assets stay in the list and out of the cap. */
+export function summarizeFirstView(entries: { url: string; bytes: number }[]): Pick<
+  PerfSample,
+  'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'
+> {
+  const firstViewResources = aggregateResources(entries);
+  let largestFirstViewFileBytes = 0;
+  for (const resource of firstViewResources) {
+    if (isDeferredAsset(resource.url)) continue;
+    if (resource.bytes > largestFirstViewFileBytes) largestFirstViewFileBytes = resource.bytes;
+  }
+  return {
+    firstViewBytes: firstViewResources.reduce((sum, resource) => sum + resource.bytes, 0),
+    largestFirstViewFileBytes,
+    firstViewResources,
+  };
 }
 
 type DeviceOptions = Pick<
@@ -98,13 +139,53 @@ type DeviceOptions = Pick<
   'userAgent' | 'viewport' | 'deviceScaleFactor' | 'isMobile' | 'hasTouch' | 'extraHTTPHeaders' | 'baseURL'
 >;
 
-type CdpRequest = { url: string; generation: number; type?: string };
+type ClockAnchor = { timestamp: number; wallTime: number };
+
+type CdpChunk = { at: number; bytes: number };
+
+type CdpRequest = {
+  url: string;
+  generation: number;
+  type?: string;
+  startedAt: number;
+  finishedAt?: number;
+  encodedBytes?: number;
+  chunks: CdpChunk[];
+};
 
 type CdpTracker = {
   generation: number;
   meta: Map<string, CdpRequest>;
   bytes: Map<string, number>;
+  anchor?: ClockAnchor;
 };
+
+function performanceMsToCdp(anchor: ClockAnchor, timeOriginMs: number, perfMs: number): number {
+  const epochSeconds = (timeOriginMs + perfMs) / 1000;
+  return anchor.timestamp + (epochSeconds - anchor.wallTime);
+}
+
+function snapshotCdpFirstView(tracker: CdpTracker, fcpCdp: number | null): Pick<
+  PerfSample,
+  'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'
+> {
+  if (fcpCdp == null) return emptyFirstView();
+  const finished: { url: string; bytes: number }[] = [];
+  let partialBytes = 0;
+  for (const meta of tracker.meta.values()) {
+    if (meta.generation !== tracker.generation) continue;
+    const doneBeforePaint = meta.finishedAt != null && meta.finishedAt <= fcpCdp;
+    if (doneBeforePaint) {
+      finished.push({ url: meta.url, bytes: meta.encodedBytes ?? 0 });
+      continue;
+    }
+    for (const chunk of meta.chunks) {
+      if (chunk.at <= fcpCdp) partialBytes += chunk.bytes;
+    }
+  }
+  const summary = summarizeFirstView(finished);
+  return { ...summary, firstViewBytes: summary.firstViewBytes + partialBytes };
+}
 
 function isLongLivedTransfer(type: string | undefined, url: string): boolean {
   if (type === 'WebSocket' || type === 'EventSource') return true;
@@ -163,19 +244,31 @@ async function waitForTransferToSettle(page: Page, tracker: CdpTracker, maxMs = 
   return transferIsQuiet(tracker) && !(await declaredMediaStillMissing(page, tracker));
 }
 
-async function readResourceTiming(page: Page): Promise<{ fcpMs: number | null; entries: { url: string; bytes: number }[] }> {
+async function readResourceTiming(
+  page: Page,
+): Promise<{ fcpMs: number | null; timeOrigin: number; entries: { url: string; bytes: number; responseEnd: number | null }[] }> {
   return page.evaluate(() => {
     const fcp = performance.getEntriesByName('first-contentful-paint')[0];
     const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
     const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
     return {
       fcpMs: fcp ? Math.round(fcp.startTime) : null,
+      timeOrigin: performance.timeOrigin,
       entries: [
-        ...(navigation ? [{ url: navigation.name, bytes: navigation.transferSize || 0 }] : []),
-        ...resources.map((entry) => ({ url: entry.name, bytes: entry.transferSize || 0 })),
+        ...(navigation ? [{ url: navigation.name, bytes: navigation.transferSize || 0, responseEnd: navigation.responseEnd }] : []),
+        ...resources.map((entry) => ({ url: entry.name, bytes: entry.transferSize || 0, responseEnd: entry.responseEnd })),
       ],
     };
   });
+}
+
+function firstViewFromTiming(
+  entries: { url: string; bytes: number; responseEnd: number | null }[],
+  fcpMs: number | null,
+): Pick<PerfSample, 'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'> {
+  if (fcpMs == null) return emptyFirstView();
+  const finished = entries.filter((entry) => entry.responseEnd != null && entry.responseEnd > 0 && entry.responseEnd <= fcpMs);
+  return summarizeFirstView(finished);
 }
 
 export async function measurePage(args: {
@@ -186,7 +279,20 @@ export async function measurePage(args: {
   target: SmokeTarget;
 }): Promise<PerfSample> {
   const { browser, browserName, project, options, target } = args;
-  const base: Omit<PerfSample, 'fcpMs' | 'transferredBytes' | 'requestCount' | 'bytesSource' | 'loadFinished' | 'largestResources' | 'throttling' | 'cpuThrottle'> = {
+  const base: Omit<
+    PerfSample,
+    | 'fcpMs'
+    | 'firstViewBytes'
+    | 'largestFirstViewFileBytes'
+    | 'firstViewResources'
+    | 'transferredBytes'
+    | 'requestCount'
+    | 'bytesSource'
+    | 'loadFinished'
+    | 'largestResources'
+    | 'throttling'
+    | 'cpuThrottle'
+  > = {
     page: target.page,
     path: target.path,
     project,
@@ -215,11 +321,25 @@ export async function measurePage(args: {
           // A warm cache would skew page weight. Failure here still leaves a fresh context.
         }
         cdp.on('Network.requestWillBeSent', (event) => {
+          if (!active.anchor) active.anchor = { timestamp: event.timestamp, wallTime: event.wallTime };
+          const existing = active.meta.get(event.requestId);
+          if (existing) {
+            existing.url = event.request.url;
+            existing.type = event.type;
+            return;
+          }
           active.meta.set(event.requestId, {
             url: event.request.url,
             generation: active.generation,
             type: event.type,
+            startedAt: event.timestamp,
+            chunks: [],
           });
+        });
+        cdp.on('Network.dataReceived', (event) => {
+          const meta = active.meta.get(event.requestId);
+          if (!meta) return;
+          meta.chunks.push({ at: event.timestamp, bytes: event.encodedDataLength });
         });
         const markDone = (requestId: string, bytes?: number) => {
           if (!active.meta.has(requestId)) return;
@@ -231,12 +351,24 @@ export async function measurePage(args: {
         };
         cdp.on('Network.loadingFinished', (event) => {
           markDone(event.requestId, event.encodedDataLength);
+          const meta = active.meta.get(event.requestId);
+          if (!meta) return;
+          meta.finishedAt = event.timestamp;
+          meta.encodedBytes = event.encodedDataLength;
         });
         cdp.on('Network.loadingFailed', (event) => {
           markDone(event.requestId);
+          const meta = active.meta.get(event.requestId);
+          if (!meta || meta.finishedAt != null) return;
+          meta.finishedAt = event.timestamp;
+          meta.encodedBytes = meta.chunks.reduce((sum, chunk) => sum + chunk.bytes, 0);
         });
         cdp.on('Network.requestServedFromCache', (event) => {
           markDone(event.requestId);
+          const meta = active.meta.get(event.requestId);
+          if (!meta || meta.finishedAt != null) return;
+          meta.finishedAt = meta.startedAt;
+          meta.encodedBytes = 0;
         });
         await cdp.send('Network.emulateNetworkConditions', SLOW_3G);
         throttling = 'slow-3g';
@@ -276,7 +408,7 @@ export async function measurePage(args: {
     }
 
     const timing = await readResourceTiming(page);
-    let entries = timing.entries;
+    let entries: { url: string; bytes: number }[] = timing.entries;
     let requestCount = timing.entries.length;
     let bytesSource: PerfSample['bytesSource'] = 'resource-timing';
 
@@ -288,12 +420,18 @@ export async function measurePage(args: {
     }
 
     const transferredBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+    const fcpMs = fcpAppeared ? timing.fcpMs : null;
+    let firstView = firstViewFromTiming(timing.entries, fcpMs);
+    if (tracker && throttling === 'slow-3g' && tracker.anchor && fcpMs != null) {
+      firstView = snapshotCdpFirstView(tracker, performanceMsToCdp(tracker.anchor, timing.timeOrigin, fcpMs));
+    }
     const sample: PerfSample = {
       ...base,
       throttling,
       ...(throttlingNote ? { throttlingNote } : {}),
       cpuThrottle,
-      fcpMs: fcpAppeared ? timing.fcpMs : null,
+      fcpMs,
+      ...firstView,
       transferredBytes,
       requestCount,
       bytesSource,
@@ -310,6 +448,7 @@ export async function measurePage(args: {
       throttlingNote: browserName === 'chromium' ? undefined : 'Chrome DevTools throttling is not available on WebKit. Recorded unthrottled.',
       cpuThrottle: null,
       fcpMs: null,
+      ...emptyFirstView(),
       transferredBytes: 0,
       requestCount: 0,
       bytesSource: browserName === 'chromium' ? 'cdp' : 'resource-timing',
@@ -360,7 +499,7 @@ export async function publishProjectSamples(args: {
   samples: PerfSample[];
   baseURL: string;
   enforced: boolean;
-  budgets: { fcpMs: number; transferredBytes: number };
+  budgets: { fcpMs: number; firstViewBytes: number; firstViewFileBytes: number };
 }): Promise<PerfBaseline> {
   const slug = args.project.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
   fs.mkdirSync(PARTIALS_DIR, { recursive: true });

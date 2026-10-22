@@ -41,16 +41,21 @@ The lint/typecheck/build workflow is separate and is not modified here.
 | Variable | Default | Meaning |
 |---|---|---|
 | `BASE_URL` | `http://localhost:3000` | Site under test |
-| `FCP_BUDGET_MS` | `5000` | Slow 3G first contentful paint budget |
-| `TRANSFER_BUDGET_BYTES` | `1048576` | Slow 3G first-view transfer budget (1 MiB) |
-| `ENFORCE_PERF_BUDGETS` | unset | Set to `1` to fail Slow 3G rows that miss the budget |
+| `FCP_BUDGET_MS` | `5000` | Chromium Slow 3G first contentful paint budget |
+| `TRANSFER_BUDGET_BYTES` | `1048576` | Chromium Slow 3G budget for `firstViewBytes` (1 MiB) |
+| `FIRST_VIEW_FILE_BUDGET_BYTES` | `307200` | Chromium Slow 3G per-file cap (300 KB) for a request that finished before first contentful paint |
+| `ENFORCE_PERF_BUDGETS` | unset | Set to `1` to fail Chromium Slow 3G rows that miss a budget |
 | `TEST_STUDENT_URL` | unset | Seeded preview graduate. Adds the board page to the perf baseline. The sign-flow test stays skipped when this is unset |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | unset | Vercel protection bypass. Sent as a header when set. Not logged |
 | `SUPABASE_PREVIEW_URL` | unset | Preview Supabase URL. The `signatures_public` placeholders stay skipped when this is unset |
 | `SUPABASE_ANON_KEY` | unset | Anon key for those placeholders once they are enabled. `NEXT_PUBLIC_SUPABASE_ANON_KEY` is the fallback. Not logged |
 | `TEST_BOARD_ID` | unset | Board id or slug passed as `p_id`. Falls back to the path of `TEST_STUDENT_URL` |
 
-Slow 3G uses the Chrome DevTools preset (2000 ms latency, 50 KB/s down and up) and 4x CPU throttling on Chromium (desktop and Pixel 5). Transfer there is CDP `encodedDataLength`. After `load`, Chromium waits until in-flight responses finish, including a hero video that starts late (up to 180s). Realtime sockets are ignored. iPhone 12 runs in WebKit, which cannot apply that throttle, so those rows are marked `throttling: "unthrottled"` and use resource timing. Each row records FCP, total bytes, request count, and the 5 largest resources. The merged file is `e2e/results/perf-baseline.json` (also a Playwright attachment, and a GitHub Actions artifact named `perf-baseline`). Budgets are report-only until `ENFORCE_PERF_BUDGETS=1`, and even then they apply only to Slow 3G rows.
+Slow 3G uses the Chrome DevTools preset (2000 ms latency, 50 KB/s down and up) and 4x CPU throttling on Chromium (desktop and Pixel 5). Transfer there is CDP `encodedDataLength`. After `load`, Chromium waits until in-flight responses finish, including a hero video that starts late (up to 180s). Realtime sockets are ignored. iPhone 12 runs in WebKit, which cannot apply that throttle, so those rows are marked `throttling: "unthrottled"` and use resource timing.
+
+Each row records FCP, `firstViewBytes` (bytes transferred by the time first contentful paint fires), `largestFirstViewFileBytes`, `firstViewResources` (url and bytes for requests that finished before that paint), `transferredBytes` for the full load, request count, and the 5 largest resources of the full load. On WebKit, `firstViewBytes` is the sum of resource-timing transfers that completed by first contentful paint. Chromium Slow 3G also includes bytes already received for responses still in flight at that paint. The merged file is `e2e/results/perf-baseline.json` (also a Playwright attachment, and a GitHub Actions artifact named `perf-baseline`).
+
+Budget gates read only the Chromium `slow-3g` rows. The WebKit rows are unthrottled, so they are not compared to these budgets. The 300 KB per-file cap (`FIRST_VIEW_FILE_BUDGET_BYTES`, 307200 bytes) applies to `largestFirstViewFileBytes` only: requests that finished before first contentful paint. Later loads, including the hero video `vid1.mp4` and the 3D model `scene.bin`, stay in `transferredBytes` and do not count toward that cap. They are outside the first-view file budget. `TRANSFER_BUDGET_BYTES` is compared to `firstViewBytes`, not to the full load. Budgets are report-only until `ENFORCE_PERF_BUDGETS=1`.
 
 ## Tests
 

@@ -1,10 +1,11 @@
 {
-  "generatedAt": "2026-10-22T09:33:31.090Z",
+  "generatedAt": "2026-10-22T09:45:00.137Z",
   "baseURL": "http://localhost:3000",
   "enforced": false,
   "budgets": {
     "fcpMs": 5000,
-    "transferredBytes": 1048576
+    "firstViewBytes": 1048576,
+    "firstViewFileBytes": 307200
   },
   "samples": [
     {
@@ -14,7 +15,23 @@
       "browser": "chromium",
       "throttling": "slow-3g",
       "cpuThrottle": 4,
-      "fcpMs": 5200,
+      "fcpMs": 5188,
+      "firstViewBytes": 24481,
+      "largestFirstViewFileBytes": 15182,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15182
+        },
+        {
+          "url": "http://localhost:3000/",
+          "bytes": 6386
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2913
+        }
+      ],
       "transferredBytes": 4482935,
       "requestCount": 35,
       "bytesSource": "cdp",
@@ -50,9 +67,109 @@
       "throttling": "unthrottled",
       "throttlingNote": "Chrome DevTools throttling is not available on WebKit. Recorded unthrottled.",
       "cpuThrottle": null,
-      "fcpMs": 93,
-      "transferredBytes": 4106804,
-      "requestCount": 25,
+      "fcpMs": 108,
+      "firstViewBytes": 1486114,
+      "largestFirstViewFileBytes": 1099651,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/images/signpen.png",
+          "bytes": 1099651
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/722-204b4b0306e32e72.js",
+          "bytes": 59191
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/4bd1b696-985faf44300b8ac9.js",
+          "bytes": 53682
+        },
+        {
+          "url": "http://localhost:3000/_next/static/media/e4af272ccee01ff0-s.p.woff2",
+          "bytes": 48732
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/684-ed9fcb330e62f5db.js",
+          "bytes": 47053
+        },
+        {
+          "url": "http://localhost:3000/_next/static/media/ce0f708f7deb1f7b-s.p.woff2",
+          "bytes": 43720
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/737-2765170a24a44b39.js",
+          "bytes": 37496
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15116
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/44530001-4133d7261a1b202b.js",
+          "bytes": 13738
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/425-35f29a5736c0cb87.js",
+          "bytes": 11410
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/268-b894e4e92f7b9551.js",
+          "bytes": 7948
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/95-0ff8810cbb14032d.js",
+          "bytes": 7259
+        },
+        {
+          "url": "http://localhost:3000/",
+          "bytes": 6237
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/421-f98c5198b94e409b.js",
+          "bytes": 6230
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/212-d0a30e84f5578d4b.js",
+          "bytes": 5853
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/app/page-c54674c44947fcd6.js",
+          "bytes": 4312
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/874-4066d906e5e78318.js",
+          "bytes": 3678
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/148-147a7f9687b8b446.js",
+          "bytes": 3555
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/377-cd4e264786d15ec3.js",
+          "bytes": 2953
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2848
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/webpack-f05e57720052847d.js",
+          "bytes": 2312
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/app/layout-62d779db75b77bb4.js",
+          "bytes": 2309
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/main-app-9ba861aad94091b4.js",
+          "bytes": 831
+        },
+        {
+          "url": "http://localhost:3000/images/interactive.svg",
+          "bytes": 0
+        }
+      ],
+      "transferredBytes": 4139464,
+      "requestCount": 28,
       "bytesSource": "resource-timing",
       "loadFinished": true,
       "largestResources": [
@@ -86,6 +203,22 @@
       "throttling": "slow-3g",
       "cpuThrottle": 4,
       "fcpMs": 5200,
+      "firstViewBytes": 24481,
+      "largestFirstViewFileBytes": 15182,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15182
+        },
+        {
+          "url": "http://localhost:3000/",
+          "bytes": 6386
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2913
+        }
+      ],
       "transferredBytes": 4523451,
       "requestCount": 32,
       "bytesSource": "cdp",
@@ -120,7 +253,23 @@
       "browser": "chromium",
       "throttling": "slow-3g",
       "cpuThrottle": 4,
-      "fcpMs": 5232,
+      "fcpMs": 5248,
+      "firstViewBytes": 24556,
+      "largestFirstViewFileBytes": 15182,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15182
+        },
+        {
+          "url": "http://localhost:3000/contact",
+          "bytes": 6461
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2913
+        }
+      ],
       "transferredBytes": 1531928,
       "requestCount": 37,
       "bytesSource": "cdp",
@@ -156,7 +305,75 @@
       "throttling": "unthrottled",
       "throttlingNote": "Chrome DevTools throttling is not available on WebKit. Recorded unthrottled.",
       "cpuThrottle": null,
-      "fcpMs": 80,
+      "fcpMs": 76,
+      "firstViewBytes": 1414257,
+      "largestFirstViewFileBytes": 1099651,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/images/signpen.png",
+          "bytes": 1099651
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/722-204b4b0306e32e72.js",
+          "bytes": 59191
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/4bd1b696-985faf44300b8ac9.js",
+          "bytes": 53682
+        },
+        {
+          "url": "http://localhost:3000/_next/static/media/e4af272ccee01ff0-s.p.woff2",
+          "bytes": 48732
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/684-ed9fcb330e62f5db.js",
+          "bytes": 47053
+        },
+        {
+          "url": "http://localhost:3000/_next/static/media/ce0f708f7deb1f7b-s.p.woff2",
+          "bytes": 43720
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15116
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/44530001-4133d7261a1b202b.js",
+          "bytes": 13738
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/268-b894e4e92f7b9551.js",
+          "bytes": 7948
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/95-0ff8810cbb14032d.js",
+          "bytes": 7259
+        },
+        {
+          "url": "http://localhost:3000/contact",
+          "bytes": 6312
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/148-147a7f9687b8b446.js",
+          "bytes": 3555
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2848
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/webpack-f05e57720052847d.js",
+          "bytes": 2312
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/app/layout-62d779db75b77bb4.js",
+          "bytes": 2309
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/main-app-9ba861aad94091b4.js",
+          "bytes": 831
+        }
+      ],
       "transferredBytes": 1484577,
       "requestCount": 23,
       "bytesSource": "resource-timing",
@@ -191,7 +408,23 @@
       "browser": "chromium",
       "throttling": "slow-3g",
       "cpuThrottle": 4,
-      "fcpMs": 5192,
+      "fcpMs": 5200,
+      "firstViewBytes": 24556,
+      "largestFirstViewFileBytes": 15182,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15182
+        },
+        {
+          "url": "http://localhost:3000/contact",
+          "bytes": 6461
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2913
+        }
+      ],
       "transferredBytes": 1531928,
       "requestCount": 37,
       "bytesSource": "cdp",
@@ -226,7 +459,23 @@
       "browser": "chromium",
       "throttling": "slow-3g",
       "cpuThrottle": 4,
-      "fcpMs": 5156,
+      "fcpMs": 5152,
+      "firstViewBytes": 21672,
+      "largestFirstViewFileBytes": 15182,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15182
+        },
+        {
+          "url": "http://localhost:3000/login",
+          "bytes": 3577
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2913
+        }
+      ],
       "transferredBytes": 433622,
       "requestCount": 26,
       "bytesSource": "cdp",
@@ -262,7 +511,87 @@
       "throttling": "unthrottled",
       "throttlingNote": "Chrome DevTools throttling is not available on WebKit. Recorded unthrottled.",
       "cpuThrottle": null,
-      "fcpMs": 105,
+      "fcpMs": 133,
+      "firstViewBytes": 381047,
+      "largestFirstViewFileBytes": 59191,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/_next/static/chunks/722-204b4b0306e32e72.js",
+          "bytes": 59191
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/4bd1b696-985faf44300b8ac9.js",
+          "bytes": 53682
+        },
+        {
+          "url": "http://localhost:3000/_next/static/media/e4af272ccee01ff0-s.p.woff2",
+          "bytes": 48732
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/684-ed9fcb330e62f5db.js",
+          "bytes": 47053
+        },
+        {
+          "url": "http://localhost:3000/_next/static/media/ce0f708f7deb1f7b-s.p.woff2",
+          "bytes": 43720
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/737-2765170a24a44b39.js",
+          "bytes": 37496
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/198-8474c38996a40813.js",
+          "bytes": 23108
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15116
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/44530001-4133d7261a1b202b.js",
+          "bytes": 13738
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/95-0ff8810cbb14032d.js",
+          "bytes": 7259
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/app/login/page-abf636eafb54f76e.js",
+          "bytes": 7138
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/212-d0a30e84f5578d4b.js",
+          "bytes": 5853
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/874-4066d906e5e78318.js",
+          "bytes": 3678
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/148-147a7f9687b8b446.js",
+          "bytes": 3555
+        },
+        {
+          "url": "http://localhost:3000/login",
+          "bytes": 3428
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2848
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/webpack-f05e57720052847d.js",
+          "bytes": 2312
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/app/layout-62d779db75b77bb4.js",
+          "bytes": 2309
+        },
+        {
+          "url": "http://localhost:3000/_next/static/chunks/main-app-9ba861aad94091b4.js",
+          "bytes": 831
+        }
+      ],
       "transferredBytes": 381047,
       "requestCount": 19,
       "bytesSource": "resource-timing",
@@ -298,6 +627,22 @@
       "throttling": "slow-3g",
       "cpuThrottle": 4,
       "fcpMs": 5152,
+      "firstViewBytes": 21672,
+      "largestFirstViewFileBytes": 15182,
+      "firstViewResources": [
+        {
+          "url": "http://localhost:3000/_next/static/css/3962f45634298eee.css",
+          "bytes": 15182
+        },
+        {
+          "url": "http://localhost:3000/login",
+          "bytes": 3577
+        },
+        {
+          "url": "http://localhost:3000/_next/static/css/b97c51ee3bf4f6ee.css",
+          "bytes": 2913
+        }
+      ],
       "transferredBytes": 433620,
       "requestCount": 26,
       "bytesSource": "cdp",
