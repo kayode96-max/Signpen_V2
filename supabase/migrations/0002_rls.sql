@@ -86,6 +86,32 @@ revoke all on function public.signer_owns(uuid) from public, anon, authenticated
 grant execute on function public.signer_owns(uuid) to anon, authenticated;
 
 -- Same session, within 24 hours of the signature timestamp.
+-- The two-argument form takes the actor explicitly. The service-role write
+-- functions use it, because a service-role call has no auth.uid().
+-- Execute is service_role only, so a browser cannot probe another user.
+create or replace function public.signer_can_modify(p_signature_id uuid, p_actor uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select p_actor is not null and exists (
+    select 1
+    from public.signature_signers ss
+    join public.signatures s on s.id = ss."signatureId"
+    where ss."signatureId" = p_signature_id
+      and ss."signerUserId" = p_actor
+      and s."timestamp" > now() - interval '24 hours'
+  );
+$$;
+
+alter function public.signer_can_modify(uuid, uuid) owner to postgres;
+
+revoke all on function public.signer_can_modify(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.signer_can_modify(uuid, uuid) to service_role;
+
+-- Session form used by the guard trigger. Same 24 hour rule.
 create or replace function public.signer_can_modify(p_signature_id uuid)
 returns boolean
 language sql
@@ -93,20 +119,44 @@ stable
 security definer
 set search_path = pg_catalog, public
 as $$
-  select exists (
-    select 1
-    from public.signature_signers ss
-    join public.signatures s on s.id = ss."signatureId"
-    where ss."signatureId" = p_signature_id
-      and ss."signerUserId" = auth.uid()
-      and s."timestamp" > now() - interval '24 hours'
-  );
+  select public.signer_can_modify(p_signature_id, auth.uid());
 $$;
 
 alter function public.signer_can_modify(uuid) owner to postgres;
 
 revoke all on function public.signer_can_modify(uuid) from public, anon, authenticated;
 grant execute on function public.signer_can_modify(uuid) to authenticated;
+
+-- True when p_actor is a non-anonymous auth user. Used by the service-role
+-- write functions, which cannot trust auth.jwt() (that is the service key).
+-- Not granted to the browser or to service_role as an RPC.
+create or replace function public.is_real_actor(p_actor uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+  select exists (
+    select 1
+    from auth.users u
+    where u.id = p_actor
+      and coalesce(u.raw_app_meta_data ->> 'provider', '') is distinct from 'anonymous'
+      and not (
+        jsonb_typeof(coalesce(u.raw_app_meta_data -> 'providers', 'null'::jsonb)) = 'array'
+        and jsonb_array_length(u.raw_app_meta_data -> 'providers') > 0
+        and not exists (
+          select 1
+          from jsonb_array_elements_text(u.raw_app_meta_data -> 'providers') provider
+          where provider is distinct from 'anonymous'
+        )
+      )
+  );
+$$;
+
+alter function public.is_real_actor(uuid) owner to postgres;
+
+revoke all on function public.is_real_actor(uuid) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- Enable RLS. FORCE so a non-superuser table owner does not silently bypass.
@@ -304,7 +354,11 @@ revoke all on table public.sentiment_daily_usage from public, anon, authenticate
 -- not hidden by the owner, including after the 24 hour edit window, so a
 -- private note does not vanish from their session. ASSUMPTION: that
 -- self-read is acceptable.
--- Inserts: no policy and no grant. insert_signature() is the only writer.
+-- Inserts: no policy and no grant. insert_signature() is the only insert.
+-- Updates and deletes: no grant and no policy for anon or authenticated.
+-- The browser cannot write this table. owner_set_signature_hidden,
+-- signer_update_signature, and delete_signature are the only writers,
+-- and only service_role may execute them.
 -- The filtered public read is signatures_public (get_board_signatures is an
 -- alias). signatures_select has no board filter, so anon can still read
 -- public rows across boards and learn board ids. Realtime postgres_changes
@@ -313,15 +367,12 @@ revoke all on table public.sentiment_daily_usage from public, anon, authenticate
 -- ---------------------------------------------------------------------------
 revoke all on table public.signatures from public, anon, authenticated;
 grant select on table public.signatures to anon, authenticated;
-grant update (
-  "signatoryName",
-  "signatoryNote",
-  "signatureImageUrl",
-  position,
-  private_by_signer,
-  hidden_by_owner
-) on table public.signatures to authenticated;
-grant delete on table public.signatures to authenticated;
+revoke update, delete on table public.signatures from public, anon, authenticated;
+
+drop policy if exists signatures_owner_update on public.signatures;
+drop policy if exists signatures_signer_update on public.signatures;
+drop policy if exists signatures_owner_delete on public.signatures;
+drop policy if exists signatures_signer_delete on public.signatures;
 
 create policy signatures_select on public.signatures
   for select to anon, authenticated
@@ -334,29 +385,14 @@ create policy signatures_select on public.signatures
     )
   );
 
-create policy signatures_owner_update on public.signatures
-  for update to authenticated
-  using ("studentId" = auth.uid() and public.is_real_user())
-  with check ("studentId" = auth.uid() and public.is_real_user());
-
-create policy signatures_signer_update on public.signatures
-  for update to authenticated
-  using (public.signer_can_modify(id))
-  with check (public.signer_can_modify(id));
-
-create policy signatures_owner_delete on public.signatures
-  for delete to authenticated
-  using ("studentId" = auth.uid() and public.is_real_user());
-
-create policy signatures_signer_delete on public.signatures
-  for delete to authenticated
-  using (public.signer_can_modify(id));
-
 -- The owner may set hidden_by_owner and nothing about private_by_signer.
 -- Only the signer, inside signer_can_modify's 24 hour window, may change
 -- private_by_signer. Signers cannot set hidden_by_owner. Identity columns
--- stay immutable. Column grants cannot tell the owner from the signer
--- (both are role authenticated), so this trigger is the enforcement.
+-- stay immutable.
+-- There is no browser UPDATE grant, so this trigger is not the live write
+-- path. The service-role functions below repeat these column rules. A
+-- security-definer update runs as postgres, and this trigger returns early
+-- for that role, which is why the functions must not rely on it.
 create or replace function public.tg_signatures_guard()
 returns trigger
 language plpgsql
@@ -399,6 +435,130 @@ drop trigger if exists signatures_guard on public.signatures;
 create trigger signatures_guard
   before update on public.signatures
   for each row execute function public.tg_signatures_guard();
+
+-- ---------------------------------------------------------------------------
+-- Signature edits and deletes. service_role only. Each function re-checks
+-- the actor. not_found and forbidden are distinct results, not one error.
+-- The owner function writes hidden_by_owner and no other column, so it
+-- cannot change private_by_signer. The signer function writes the shirt
+-- fields and private_by_signer, never hidden_by_owner.
+-- ---------------------------------------------------------------------------
+create or replace function public.owner_set_signature_hidden(
+  p_actor uuid,
+  p_signature_id uuid,
+  p_hidden boolean
+) returns text
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  board_id uuid;
+begin
+  select "studentId" into board_id
+  from public.signatures
+  where id = p_signature_id;
+
+  if not found then
+    return 'not_found';
+  end if;
+
+  if p_hidden is null
+     or board_id is distinct from p_actor
+     or not public.is_real_actor(p_actor) then
+    return 'forbidden';
+  end if;
+
+  update public.signatures
+  set hidden_by_owner = p_hidden
+  where id = p_signature_id;
+
+  return 'ok';
+end;
+$$;
+
+alter function public.owner_set_signature_hidden(uuid, uuid, boolean) owner to postgres;
+
+revoke all on function public.owner_set_signature_hidden(uuid, uuid, boolean) from public, anon, authenticated;
+grant execute on function public.owner_set_signature_hidden(uuid, uuid, boolean) to service_role;
+
+create or replace function public.signer_update_signature(
+  p_actor uuid,
+  p_signature_id uuid,
+  p_name text,
+  p_note text,
+  p_image text,
+  p_position jsonb,
+  p_private boolean
+) returns text
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if not exists (select 1 from public.signatures where id = p_signature_id) then
+    return 'not_found';
+  end if;
+
+  if not public.signer_can_modify(p_signature_id, p_actor) then
+    return 'forbidden';
+  end if;
+
+  update public.signatures
+  set
+    "signatoryName" = coalesce(p_name, "signatoryName"),
+    "signatoryNote" = coalesce(p_note, "signatoryNote"),
+    "signatureImageUrl" = coalesce(p_image, "signatureImageUrl"),
+    position = coalesce(p_position, position),
+    private_by_signer = coalesce(p_private, private_by_signer)
+  where id = p_signature_id;
+
+  return 'ok';
+end;
+$$;
+
+alter function public.signer_update_signature(uuid, uuid, text, text, text, jsonb, boolean) owner to postgres;
+
+revoke all on function public.signer_update_signature(uuid, uuid, text, text, text, jsonb, boolean) from public, anon, authenticated;
+grant execute on function public.signer_update_signature(uuid, uuid, text, text, text, jsonb, boolean) to service_role;
+
+create or replace function public.delete_signature(
+  p_actor uuid,
+  p_signature_id uuid
+) returns text
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  board_id uuid;
+begin
+  select "studentId" into board_id
+  from public.signatures
+  where id = p_signature_id;
+
+  if not found then
+    return 'not_found';
+  end if;
+
+  if not (
+    (board_id = p_actor and public.is_real_actor(p_actor))
+    or public.signer_can_modify(p_signature_id, p_actor)
+  ) then
+    return 'forbidden';
+  end if;
+
+  delete from public.signatures
+  where id = p_signature_id;
+
+  return 'ok';
+end;
+$$;
+
+alter function public.delete_signature(uuid, uuid) owner to postgres;
+
+revoke all on function public.delete_signature(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.delete_signature(uuid, uuid) to service_role;
 
 revoke all on function public.tg_set_updated_at() from public, anon, authenticated;
 grant execute on function public.tg_set_updated_at() to authenticated;

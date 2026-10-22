@@ -3,14 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const requireRequestUser = vi.hoisted(() => vi.fn());
 const createServiceClient = vi.hoisted(() => vi.fn());
-const createUserClient = vi.hoisted(() => vi.fn());
 const revalidateTag = vi.hoisted(() => vi.fn());
 
 vi.mock('next/cache', () => ({ revalidateTag }));
 vi.mock('@/lib/server/session', () => ({ requireRequestUser }));
 vi.mock('@/lib/server/supabase', () => ({
   createServiceClient,
-  createUserClient,
   MissingServerConfigError: class MissingServerConfigError extends Error {},
 }));
 
@@ -38,23 +36,26 @@ function call(method: 'PATCH' | 'DELETE', body?: unknown, id = SIG) {
 }
 
 describe('/api/signatures/[id]', () => {
-  const serviceUpdate = vi.fn();
-  const userUpdate = vi.fn();
-  const userDelete = vi.fn();
+  const rpc = vi.fn();
   let signerCanModify = false;
+  let writeResult: string = 'ok';
   let row: { id: string; studentId: string } | null = { id: SIG, studentId: OWNER };
 
   beforeEach(() => {
     vi.clearAllMocks();
     signerCanModify = false;
+    writeResult = 'ok';
     row = { id: SIG, studentId: OWNER };
     requireRequestUser.mockResolvedValue({
       ok: true,
       user: { id: STRANGER, isAnonymous: false },
     });
 
-    serviceUpdate.mockImplementation(() => {
-      throw new Error('service role must not write signatures');
+    rpc.mockImplementation((name: string) => {
+      if (name === 'signer_can_modify') {
+        return Promise.resolve({ data: signerCanModify, error: null });
+      }
+      return Promise.resolve({ data: writeResult, error: null });
     });
     createServiceClient.mockReturnValue({
       from: () => ({
@@ -63,40 +64,24 @@ describe('/api/signatures/[id]', () => {
             maybeSingle: () => Promise.resolve({ data: row, error: null }),
           }),
         }),
-        update: serviceUpdate,
-        delete: serviceUpdate,
+        update: () => {
+          throw new Error('authenticated update must not run');
+        },
+        delete: () => {
+          throw new Error('authenticated delete must not run');
+        },
       }),
-    });
-
-    userUpdate.mockReturnValue({
-      eq: () => ({
-        select: () => Promise.resolve({ data: [{ id: SIG }], error: null }),
-      }),
-    });
-    userDelete.mockReturnValue({
-      eq: () => ({
-        select: () => Promise.resolve({ data: [{ id: SIG }], error: null }),
-      }),
-    });
-    createUserClient.mockReturnValue({
-      rpc: () => Promise.resolve({ data: signerCanModify, error: null }),
-      from: () => ({
-        update: userUpdate,
-        delete: userDelete,
-      }),
+      rpc,
     });
   });
 
   function asUser(id: string, isAnonymous = false, canModify = false) {
     signerCanModify = canModify;
     requireRequestUser.mockResolvedValue({ ok: true, user: { id, isAnonymous } });
-    createUserClient.mockReturnValue({
-      rpc: () => Promise.resolve({ data: canModify, error: null }),
-      from: () => ({
-        update: userUpdate,
-        delete: userDelete,
-      }),
-    });
+  }
+
+  function writeCalls() {
+    return rpc.mock.calls.filter((call) => call[0] !== 'signer_can_modify');
   }
 
   it('lets the owner hide a signature and invalidates that board', async () => {
@@ -105,8 +90,11 @@ describe('/api/signatures/[id]', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ id: SIG });
-    expect(userUpdate).toHaveBeenCalledWith({ hidden_by_owner: true });
-    expect(serviceUpdate).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('owner_set_signature_hidden', {
+      p_actor: OWNER,
+      p_signature_id: SIG,
+      p_hidden: true,
+    });
     expect(revalidateTag).toHaveBeenCalledTimes(1);
     expect(revalidateTag).toHaveBeenCalledWith(`board:${OWNER}`);
   });
@@ -115,7 +103,15 @@ describe('/api/signatures/[id]', () => {
     asUser(OWNER);
     const response = await call('PATCH', { signatoryNote: 'Changed' });
     expect(response.status).toBe(403);
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(writeCalls()).toEqual([]);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it('refuses an anonymous session that matches the board id', async () => {
+    asUser(OWNER, true, false);
+    const response = await call('PATCH', { hidden_by_owner: true });
+    expect(response.status).toBe(403);
+    expect(writeCalls()).toEqual([]);
     expect(revalidateTag).not.toHaveBeenCalled();
   });
 
@@ -128,10 +124,14 @@ describe('/api/signatures/[id]', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(userUpdate).toHaveBeenCalledWith({
-      signatoryName: 'Ada',
-      private_by_signer: true,
-      position: { x: 12.5, y: 40 },
+    expect(rpc).toHaveBeenCalledWith('signer_update_signature', {
+      p_actor: SIGNER,
+      p_signature_id: SIG,
+      p_name: 'Ada',
+      p_note: null,
+      p_image: null,
+      p_position: { x: 12.5, y: 40 },
+      p_private: true,
     });
     expect(revalidateTag).toHaveBeenCalledWith(`board:${OWNER}`);
   });
@@ -140,7 +140,7 @@ describe('/api/signatures/[id]', () => {
     asUser(SIGNER, true, true);
     const response = await call('PATCH', { hidden_by_owner: true });
     expect(response.status).toBe(403);
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(writeCalls()).toEqual([]);
     expect(revalidateTag).not.toHaveBeenCalled();
   });
 
@@ -148,12 +148,13 @@ describe('/api/signatures/[id]', () => {
     asUser(STRANGER, false, false);
     const forbidden = await call('PATCH', { signatoryName: 'Ada' });
     expect(forbidden.status).toBe(403);
+    expect(writeCalls()).toEqual([]);
     expect(revalidateTag).not.toHaveBeenCalled();
 
     row = null;
     const missing = await call('DELETE');
     expect(missing.status).toBe(404);
-    expect(userDelete).not.toHaveBeenCalled();
+    expect(writeCalls()).toEqual([]);
     expect(revalidateTag).not.toHaveBeenCalled();
   });
 
@@ -161,20 +162,42 @@ describe('/api/signatures/[id]', () => {
     asUser(OWNER);
     const byOwner = await call('DELETE');
     expect(byOwner.status).toBe(200);
-    expect(userDelete).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('delete_signature', {
+      p_actor: OWNER,
+      p_signature_id: SIG,
+    });
     expect(revalidateTag).toHaveBeenCalledWith(`board:${OWNER}`);
 
     revalidateTag.mockClear();
-    userDelete.mockClear();
+    rpc.mockClear();
     asUser(SIGNER, true, true);
     const bySigner = await call('DELETE');
     expect(bySigner.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith('delete_signature', {
+      p_actor: SIGNER,
+      p_signature_id: SIG,
+    });
     expect(revalidateTag).toHaveBeenCalledWith(`board:${OWNER}`);
 
     revalidateTag.mockClear();
+    rpc.mockClear();
     asUser(STRANGER);
     const refused = await call('DELETE');
     expect(refused.status).toBe(403);
+    expect(writeCalls()).toEqual([]);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it('maps forbidden and not_found from the database and does not invalidate', async () => {
+    asUser(OWNER);
+    writeResult = 'forbidden';
+    const forbidden = await call('PATCH', { hidden_by_owner: false });
+    expect(forbidden.status).toBe(403);
+    expect(revalidateTag).not.toHaveBeenCalled();
+
+    writeResult = 'not_found';
+    const missing = await call('DELETE');
+    expect(missing.status).toBe(404);
     expect(revalidateTag).not.toHaveBeenCalled();
   });
 

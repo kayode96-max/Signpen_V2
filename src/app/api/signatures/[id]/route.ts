@@ -7,13 +7,10 @@ import {
   canDeleteSignature,
   decideSignaturePatch,
   signatureActor,
+  type SignaturePatchInput,
 } from '@/lib/security/signature-access';
 import { requireRequestUser } from '@/lib/server/session';
-import {
-  createServiceClient,
-  createUserClient,
-  MissingServerConfigError,
-} from '@/lib/server/supabase';
+import { createServiceClient, MissingServerConfigError } from '@/lib/server/supabase';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,11 +20,10 @@ const signatureIdSchema = z.string().uuid('Signature id must be a UUID.');
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * Edits and deletes run as the caller's JWT, so the signatures policies and
- * tg_signatures_guard still apply. The service role only reads id and
- * studentId, which distinguishes a missing row (404) from a row the caller
- * cannot change (403) without writing past RLS.
- * signer_can_modify is signer_owns plus the 24 hour window.
+ * The browser cannot update or delete signatures. These routes verify the
+ * JWT, take the actor id from that token, and call service-role functions
+ * that re-check the owner and the 24 hour signer inside the database.
+ * A successful write invalidates board:${studentId}.
  */
 export async function PATCH(req: NextRequest, context: RouteContext) {
   let raw: unknown;
@@ -49,16 +45,23 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: decision.error }, { status: decision.status });
   }
 
-  const { data, error } = await loaded.userClient
-    .from('signatures')
-    .update(decision.changes)
-    .eq('id', loaded.id)
-    .select('id');
+  const rpc =
+    loaded.actor === 'owner'
+      ? {
+          name: 'owner_set_signature_hidden',
+          args: {
+            p_actor: loaded.actorId,
+            p_signature_id: loaded.id,
+            p_hidden: decision.changes.hidden_by_owner,
+          },
+        }
+      : {
+          name: 'signer_update_signature',
+          args: signerArgs(loaded.actorId, loaded.id, parsed.data),
+        };
 
-  if (error) return writeError(error.message);
-  if (!Array.isArray(data) || data.length === 0) {
-    return NextResponse.json({ error: 'You cannot change this signature.' }, { status: 403 });
-  }
+  const result = await callWrite(loaded.service, rpc.name, rpc.args);
+  if (!result.ok) return result.response;
 
   revalidateTag(boardCacheTag(loaded.studentId));
   return NextResponse.json({ id: loaded.id });
@@ -71,19 +74,26 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'You cannot change this signature.' }, { status: 403 });
   }
 
-  const { data, error } = await loaded.userClient
-    .from('signatures')
-    .delete()
-    .eq('id', loaded.id)
-    .select('id');
-
-  if (error) return writeError(error.message);
-  if (!Array.isArray(data) || data.length === 0) {
-    return NextResponse.json({ error: 'You cannot change this signature.' }, { status: 403 });
-  }
+  const result = await callWrite(loaded.service, 'delete_signature', {
+    p_actor: loaded.actorId,
+    p_signature_id: loaded.id,
+  });
+  if (!result.ok) return result.response;
 
   revalidateTag(boardCacheTag(loaded.studentId));
   return NextResponse.json({ id: loaded.id });
+}
+
+function signerArgs(actorId: string, signatureId: string, body: SignaturePatchInput) {
+  return {
+    p_actor: actorId,
+    p_signature_id: signatureId,
+    p_name: body.signatoryName ?? null,
+    p_note: body.signatoryNote ?? null,
+    p_image: body.signatureImageUrl ?? null,
+    p_position: body.position ?? null,
+    p_private: body.privateBySigner ?? null,
+  };
 }
 
 type LoadResult =
@@ -92,8 +102,9 @@ type LoadResult =
       ok: true;
       id: string;
       studentId: string;
+      actorId: string;
       actor: ReturnType<typeof signatureActor>;
-      userClient: ReturnType<typeof createUserClient>;
+      service: ReturnType<typeof createServiceClient>;
     };
 
 async function loadSignature(req: NextRequest, context: RouteContext): Promise<LoadResult> {
@@ -108,17 +119,6 @@ async function loadSignature(req: NextRequest, context: RouteContext): Promise<L
 
   const session = await requireRequestUser(req);
   if (!session.ok) return { ok: false, response: session.response };
-
-  const token = bearerToken(req);
-  if (!token) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { error: 'Unauthorized: Session authorization header is missing.' },
-        { status: 401 }
-      ),
-    };
-  }
 
   try {
     const service = createServiceClient();
@@ -142,9 +142,9 @@ async function loadSignature(req: NextRequest, context: RouteContext): Promise<L
       };
     }
 
-    const userClient = createUserClient(token);
-    const { data: canModify, error: signerError } = await userClient.rpc('signer_can_modify', {
+    const { data: canModify, error: signerError } = await service.rpc('signer_can_modify', {
       p_signature_id: idParsed.data,
+      p_actor: session.user.id,
     });
     if (signerError) {
       console.error('signer_can_modify failed:', signerError.code ?? 'unknown');
@@ -158,12 +158,13 @@ async function loadSignature(req: NextRequest, context: RouteContext): Promise<L
       ok: true,
       id: idParsed.data,
       studentId: row.studentId,
+      actorId: session.user.id,
       actor: signatureActor({
         user: session.user,
         studentId: row.studentId,
         signerCanModify: canModify === true,
       }),
-      userClient,
+      service,
     };
   } catch (err) {
     if (err instanceof MissingServerConfigError) {
@@ -180,22 +181,37 @@ async function loadSignature(req: NextRequest, context: RouteContext): Promise<L
   }
 }
 
-function bearerToken(req: NextRequest): string | null {
-  const header = req.headers.get('authorization') ?? '';
-  if (!header.startsWith('Bearer ')) return null;
-  const token = header.slice('Bearer '.length).trim();
-  return token || null;
-}
-
-function writeError(message: string) {
-  if (
-    message.includes('only the signer') ||
-    message.includes('only the board owner') ||
-    message.includes('not allowed') ||
-    message.includes('immutable')
-  ) {
-    return NextResponse.json({ error: 'You cannot change this signature.' }, { status: 403 });
+async function callWrite(
+  service: ReturnType<typeof createServiceClient>,
+  name: string,
+  args: Record<string, unknown>
+): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
+  const { data, error } = await service.rpc(name, args);
+  if (error) {
+    console.error('signature write failed:', error.code ?? 'unknown');
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Failed to update signature.' }, { status: 500 }),
+    };
   }
-  console.error('signature write failed');
-  return NextResponse.json({ error: 'Failed to update signature.' }, { status: 500 });
+  if (data === 'not_found') {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'This signature does not exist.' }, { status: 404 }),
+    };
+  }
+  if (data === 'forbidden') {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'You cannot change this signature.' }, { status: 403 }),
+    };
+  }
+  if (data !== 'ok') {
+    console.error('signature write returned an unexpected result');
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Failed to update signature.' }, { status: 500 }),
+    };
+  }
+  return { ok: true };
 }

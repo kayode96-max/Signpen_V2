@@ -192,7 +192,7 @@ describe('migration contract', () => {
     expect(rls).toContain('grant select on table public.signatures to anon, authenticated');
     const policy = rls.slice(
       rls.indexOf('create policy signatures_select'),
-      rls.indexOf('create policy signatures_owner_update')
+      rls.indexOf('function public.tg_signatures_guard')
     );
     expect(policy).toContain('private_by_signer = false and hidden_by_owner = false');
     expect(policy).toContain('"studentId" = auth.uid() and public.is_real_user()');
@@ -228,5 +228,80 @@ describe('migration contract', () => {
     expect(signer).toContain('only the board owner can change hidden_by_owner');
     expect(signer).not.toContain('only the signer can change private_by_signer');
     expect(rls).toContain('and s."timestamp" > now() - interval \'24 hours\'');
+  });
+
+  it('closes direct signature updates and deletes', () => {
+    expect(rls).toContain(
+      'revoke update, delete on table public.signatures from public, anon, authenticated'
+    );
+    expect(rls).not.toMatch(/grant update \(/);
+    expect(rls).not.toContain('grant delete on table public.signatures');
+    expect(rls).toContain('drop policy if exists signatures_owner_update on public.signatures');
+    expect(rls).toContain('drop policy if exists signatures_signer_update on public.signatures');
+    expect(rls).toContain('drop policy if exists signatures_owner_delete on public.signatures');
+    expect(rls).toContain('drop policy if exists signatures_signer_delete on public.signatures');
+    expect(rls).not.toContain('create policy signatures_owner_update');
+    expect(rls).not.toContain('create policy signatures_signer_update');
+    expect(rls).not.toContain('create policy signatures_owner_delete');
+    expect(rls).not.toContain('create policy signatures_signer_delete');
+
+    const writes = [
+      'public.owner_set_signature_hidden(uuid, uuid, boolean)',
+      'public.signer_update_signature(uuid, uuid, text, text, text, jsonb, boolean)',
+      'public.delete_signature(uuid, uuid)',
+    ];
+    for (const signature of writes) {
+      expect(rls).toContain(`revoke all on function ${signature} from public, anon, authenticated`);
+      expect(rls).toContain(`grant execute on function ${signature} to service_role`);
+      expect(rls).not.toContain(`grant execute on function ${signature} to anon`);
+      expect(rls).not.toContain(`grant execute on function ${signature} to authenticated`);
+    }
+
+    const ownerFn = rls.slice(
+      rls.indexOf('function public.owner_set_signature_hidden('),
+      rls.indexOf('alter function public.owner_set_signature_hidden')
+    );
+    expect(ownerFn).toContain('security definer');
+    expect(ownerFn).toContain("return 'not_found'");
+    expect(ownerFn).toContain("return 'forbidden'");
+    expect(ownerFn).toContain('public.is_real_actor(p_actor)');
+    expect(ownerFn).toContain('set hidden_by_owner = p_hidden');
+    expect(ownerFn).not.toContain('private_by_signer');
+    expect(ownerFn).not.toContain('signatoryName');
+
+    const signerFn = rls.slice(
+      rls.indexOf('function public.signer_update_signature('),
+      rls.indexOf('alter function public.signer_update_signature')
+    );
+    expect(signerFn).toContain('security definer');
+    expect(signerFn).toContain("return 'not_found'");
+    expect(signerFn).toContain("return 'forbidden'");
+    expect(signerFn).toContain('public.signer_can_modify(p_signature_id, p_actor)');
+    expect(signerFn).toContain('private_by_signer = coalesce(p_private, private_by_signer)');
+    expect(signerFn).not.toContain('hidden_by_owner');
+
+    const deleteFn = rls.slice(
+      rls.indexOf('function public.delete_signature('),
+      rls.indexOf('alter function public.delete_signature')
+    );
+    expect(deleteFn).toContain('security definer');
+    expect(deleteFn).toContain("return 'not_found'");
+    expect(deleteFn).toContain("return 'forbidden'");
+    expect(deleteFn).toContain('public.is_real_actor(p_actor)');
+    expect(deleteFn).toContain('public.signer_can_modify(p_signature_id, p_actor)');
+
+    expect(rls).toContain(
+      'revoke all on function public.is_real_actor(uuid) from public, anon, authenticated, service_role'
+    );
+    expect(rls).not.toContain('grant execute on function public.is_real_actor(uuid)');
+    expect(rls).toContain(
+      'revoke all on function public.signer_can_modify(uuid, uuid) from public, anon, authenticated'
+    );
+    expect(rls).toContain(
+      'grant execute on function public.signer_can_modify(uuid, uuid) to service_role'
+    );
+    expect(rls).not.toContain(
+      'grant execute on function public.signer_can_modify(uuid, uuid) to authenticated'
+    );
   });
 });
