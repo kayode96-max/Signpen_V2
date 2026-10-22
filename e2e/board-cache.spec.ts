@@ -20,7 +20,12 @@ import { expect, test } from './support';
  * 3. A valid but unknown UUID is an API 404 with `no-store` only when
  *    `SUPABASE_PREVIEW_URL` is set. Without a reachable Supabase the same
  *    request is a lookup failure: 500 with `no-store`, not a 404.
- * 4. That lookup failure is the error case. It runs when
+ *    An uppercase UUID is the same case: it is a UUID, so the final response
+ *    is that uncached 404, never the short public cache used for junk ids.
+ * 4. An uppercase well-formed slug such as `QA-UNKNOWN-2026` is still a
+ *    slug. The final response is 404 with `no-store` and must not send
+ *    `s-maxage`. This runs anywhere.
+ * 5. The lookup failure is the error case. It runs when
  *    `SUPABASE_PREVIEW_URL` is unset and expects `no-store`.
  *
  * Every case is `test.fail` on main. Main still answers the shirt page with
@@ -60,6 +65,15 @@ function expectShortPublicCache(header: string): void {
 function expectNoStore(header: string): void {
   expect(header.toLowerCase(), `Cache-Control should contain no-store, received "${header}"`).toContain(
     'no-store',
+  );
+}
+
+/** Well-formed ids are a 404 that must not use the junk-id public cache. */
+function expectUncached404(status: number, cacheControl: string, label: string): void {
+  expect(status, label).toBe(404);
+  expectNoStore(cacheControl);
+  expect(cacheControl.toLowerCase(), `${label} must not send s-maxage, received "${cacheControl}"`).not.toContain(
+    's-maxage',
   );
 }
 
@@ -132,6 +146,35 @@ test('unknown UUID returns an API 404 with Cache-Control no-store', async ({ pag
   const api = await getSignatures(request, studentId);
   expect(api.status, 'unknown UUID').toBe(404);
   expectNoStore(api.cacheControl);
+  const shirt = await openBoard(page, studentId);
+  expectShirt404(shirt.status, shirt.cacheControl);
+});
+
+test('uppercase UUID returns an API 404 with Cache-Control no-store', async ({ page, request }) => {
+  const preview = process.env.SUPABASE_PREVIEW_URL?.trim();
+  test.skip(
+    !preview,
+    'Without a reachable Supabase a valid UUID is a 500 from the signatures API, not a 404. Set SUPABASE_PREVIEW_URL to a preview project. Do not point this at production.',
+  );
+  test.fail(true, EXPECTED_ON_MAIN);
+  noteExpectedFailure();
+  const studentId = `A${crypto.randomUUID().slice(1)}`.toUpperCase();
+  expect(studentId, 'fixture is uppercase').not.toBe(studentId.toLowerCase());
+  expect(isUuid(studentId), 'uppercase UUID is still a UUID').toBe(true);
+  expect(isSlug(studentId), 'a UUID is not a slug').toBe(false);
+  const api = await getSignatures(request, studentId);
+  expectUncached404(api.status, api.cacheControl, 'uppercase UUID');
+  const shirt = await openBoard(page, studentId);
+  expectShirt404(shirt.status, shirt.cacheControl);
+});
+
+test.fail('uppercase slug QA-UNKNOWN-2026 returns an API 404 with Cache-Control no-store', async ({ page, request }) => {
+  noteExpectedFailure();
+  const studentId = 'QA-UNKNOWN-2026';
+  expect(isSlug(studentId.toLowerCase()), 'QA-UNKNOWN-2026 lowercases to a slug').toBe(true);
+  expect(isUuid(studentId), 'QA-UNKNOWN-2026 is not a UUID').toBe(false);
+  const api = await getSignatures(request, studentId);
+  expectUncached404(api.status, api.cacheControl, 'uppercase slug');
   const shirt = await openBoard(page, studentId);
   expectShirt404(shirt.status, shirt.cacheControl);
 });
