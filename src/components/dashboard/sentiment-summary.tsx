@@ -5,6 +5,16 @@ import { Loader2, Sparkles } from "lucide-react";
 import type { Signature } from "@/lib/types";
 import { motion } from "framer-motion";
 
+const GENERIC_SENTIMENT_ERROR = "Failed to analyze sentiments. Please try again.";
+
+function readErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || !("error" in payload)) return null;
+  const message = (payload as { error?: unknown }).error;
+  if (typeof message !== "string") return null;
+  const trimmed = message.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export default function SentimentSummary({ signatures }: { signatures: Signature[] }) {
   const [summary, setSummary] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -25,12 +35,23 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signatures: messages }),
       });
-      if (!response.ok) throw new Error("Sentiment request failed.");
-      const result = await response.json();
-      setSummary(result.sentimentSummary);
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(readErrorMessage(result) ?? GENERIC_SENTIMENT_ERROR);
+        return;
+      }
+      const summaryText =
+        result && typeof result === "object" && "summary" in result && typeof result.summary === "string"
+          ? result.summary.trim()
+          : "";
+      if (!summaryText) {
+        setError(GENERIC_SENTIMENT_ERROR);
+        return;
+      }
+      setSummary(summaryText);
     } catch (e) {
       console.error(e);
-      setError("Failed to analyze sentiments. Please try again.");
+      setError(GENERIC_SENTIMENT_ERROR);
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +79,7 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         </motion.div>
       )}
       {error && !isLoading && (
-        <div className="absolute bottom-full mb-4 right-0 text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 whitespace-nowrap z-50">{error}</div>
+        <div className="absolute bottom-full mb-4 right-0 w-64 sm:w-80 text-left text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 z-50">{error}</div>
       )}
     </div>
   );
