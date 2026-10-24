@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Copy, Check, Share2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { boardUrl } from "@/lib/public/student-public";
 import { motion } from "framer-motion";
 
 export default function ShareLink({ studentId }: { studentId: string }) {
@@ -11,7 +12,7 @@ export default function ShareLink({ studentId }: { studentId: string }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    setShareUrl(`${window.location.origin}/${studentId}`);
+    setShareUrl(boardUrl(studentId, window.location.origin));
   }, [studentId]);
 
   const handleCopy = () => {

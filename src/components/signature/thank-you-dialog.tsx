@@ -8,12 +8,12 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import Confetti from "../common/confetti";
-import type { Student } from "@/lib/types";
+import type { PublicStudent } from "@/lib/public/student-public";
 
 interface ThankYouDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  student: Student;
+  student: Pick<PublicStudent, "name" | "popupMessageConfig">;
 }
 
 export default function ThankYouDialog({ open, onOpenChange, student }: ThankYouDialogProps) {

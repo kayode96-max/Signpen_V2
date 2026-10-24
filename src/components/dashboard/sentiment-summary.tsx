@@ -4,16 +4,36 @@ import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import type { Signature } from "@/lib/types";
 import { motion } from "framer-motion";
+import {
+  RETRYABLE_SENTIMENT_ERROR,
+  sentimentCopyForStatus,
+} from "@/lib/public/sentiment-copy";
 import { supabase } from "@/supabase";
+
+function readErrorDetail(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || !("error" in payload)) return null;
+  const message = (payload as { error?: unknown }).error;
+  if (typeof message !== "string") return null;
+  const trimmed = message.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function readSentimentSummary(payload: unknown): string {
+  if (!payload || typeof payload !== "object" || !("sentimentSummary" in payload)) return "";
+  const value = (payload as { sentimentSummary?: unknown }).sentimentSummary;
+  return typeof value === "string" ? value.trim() : "";
+}
 
 export default function SentimentSummary({ signatures }: { signatures: Signature[] }) {
   const [summary, setSummary] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [allowRetry, setAllowRetry] = useState(false);
 
   const handleAnalyze = async () => {
     setIsLoading(true);
     setError("");
+    setAllowRetry(false);
     setSummary("");
     try {
       if (signatures.length === 0) {
@@ -34,20 +54,29 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         },
         body: JSON.stringify({}),
       });
-      const result = await response.json().catch(() => ({ error: "" }));
+      const result: unknown = await response.json().catch(() => null);
       if (!response.ok) {
-        if (result.error === "summary_daily_limit") {
-          throw new Error("You've used today's 5 summaries. You can get more tomorrow.");
-        }
-        if (result.error === "summary_unavailable") {
-          throw new Error("Couldn't get a summary right now. Please try again in a few minutes.");
-        }
-        throw new Error(result.error || "Failed to analyze sentiments. Please try again.");
+        const detail = readErrorDetail(result);
+        console.error(
+          "Sentiment request failed:",
+          detail ?? `Request failed with status ${response.status}.`
+        );
+        const copy = sentimentCopyForStatus(response.status);
+        setError(copy.message);
+        setAllowRetry(copy.allowRetry);
+        return;
       }
-      setSummary(result.sentimentSummary);
+      const summaryText = readSentimentSummary(result);
+      if (!summaryText) {
+        setError(RETRYABLE_SENTIMENT_ERROR);
+        setAllowRetry(true);
+        return;
+      }
+      setSummary(summaryText);
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : "Failed to analyze sentiments. Please try again.");
+      setError(RETRYABLE_SENTIMENT_ERROR);
+      setAllowRetry(true);
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +104,18 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         </motion.div>
       )}
       {error && !isLoading && (
-        <div className="absolute bottom-full mb-4 right-0 text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 whitespace-nowrap z-50">{error}</div>
+        <div className="absolute bottom-full mb-4 right-0 w-64 sm:w-80 text-left text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 z-50">
+          <p>{error}</p>
+          {allowRetry && (
+            <button
+              type="button"
+              onClick={handleAnalyze}
+              className="mt-2 font-medium text-white underline underline-offset-2 hover:text-white/80"
+            >
+              Try again
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
