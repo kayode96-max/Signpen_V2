@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
+
+// Per-caller (per IP). Never statically generated, ISR-cached, or shared via s-maxage.
+export const dynamic = 'force-dynamic';
+
+const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' };
+
+function getJson(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: PRIVATE_NO_STORE });
+}
 
 type SignatureCreateRequest = {
   studentId?: string;
@@ -11,6 +21,42 @@ type SignatureCreateRequest = {
     y?: number;
   };
 };
+
+function getClientIp(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+    req.headers.get('x-real-ip') ||
+    '127.0.0.1'
+  );
+}
+
+// GET /api/signatures?studentId=... -> { alreadySigned: boolean } for the caller's IP.
+// has_signed_ip is service_role only. The browser calls this route, never the RPC.
+// Every status (200, 4xx, 5xx) is private and uncached: the answer depends on the caller IP.
+export async function GET(req: NextRequest) {
+  const studentId = req.nextUrl.searchParams.get('studentId');
+  if (!studentId) {
+    return getJson({ error: 'studentId is required.' }, 400);
+  }
+
+  const admin = getSupabaseAdmin();
+  if (!admin) {
+    console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing the already-signed check.');
+    return getJson({ error: 'Signing is temporarily unavailable.' }, 503);
+  }
+
+  const { data, error } = await admin.rpc('has_signed_ip', {
+    p_student_id: studentId,
+    p_ip: getClientIp(req),
+  });
+
+  if (error) {
+    console.error('has_signed_ip failed:', error);
+    return getJson({ error: 'Failed to verify signing history.' }, 500);
+  }
+
+  return getJson({ alreadySigned: data === true });
+}
 
 export async function POST(req: NextRequest) {
   let body: SignatureCreateRequest;
@@ -78,17 +124,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Extract visitor IP
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
-               req.headers.get('x-real-ip') || 
-               '127.0.0.1';
+    // has_signed_ip and record_signed_ip are executable by service_role only.
+    // Fail closed before any write if the server key is missing, so a signature
+    // is never saved without its IP record.
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing to record a signature.');
+      return NextResponse.json(
+        { error: 'Signing is temporarily unavailable.' },
+        { status: 503 }
+      );
+    }
 
-    // 3. Query signed_ips to check for duplicates
-    const { data: existingIps, error: checkError } = await userClient
-      .from('signed_ips')
-      .select('*')
-      .eq('studentId', body.studentId)
-      .eq('ipAddress', ip);
+    // 2. Extract visitor IP
+    const ip = getClientIp(req);
+
+    // 3. Check signing history (server-only, hashed) for duplicates
+    const { data: alreadySigned, error: checkError } = await admin.rpc('has_signed_ip', {
+      p_student_id: body.studentId,
+      p_ip: ip,
+    });
 
     if (checkError) {
       console.error('Failed to query signed_ips table:', checkError);
@@ -98,7 +153,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (existingIps && existingIps.length > 0) {
+    if (alreadySigned === true) {
       return NextResponse.json(
         { error: 'You have already signed this board from this IP.' },
         { status: 409 }
@@ -127,12 +182,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Track client IP in signed_ips to prevent spam
-    const { error: ipInsertError } = await userClient
-      .from('signed_ips')
-      .insert({
-        studentId: body.studentId,
-        ipAddress: ip,
-      });
+    //    Service role only: signers cannot record arbitrary IPs to block others.
+    const { error: ipInsertError } = await admin.rpc('record_signed_ip', {
+      p_student_id: body.studentId,
+      p_ip: ip,
+    });
 
     if (ipInsertError) {
       // Log error but do not fail the request since signature is already recorded
