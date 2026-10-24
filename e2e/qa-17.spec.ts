@@ -409,7 +409,11 @@ async function drawAndSubmit(page: Page): Promise<string> {
     return spot ? 'shirt clicks hit Spot Taken only' : 'draw dialog did not open after shirt clicks';
   }
   await draw.getByRole('button', { name: 'Text' }).click({ force: true, noWaitAfter: true });
-  await draw.locator('canvas').click({ position: { x: 80, y: 80 }, force: true, noWaitAfter: true });
+  // The tool button returns before React switches the canvas to text mode.
+  const font = await draw.getByText('Font:', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false);
+  if (!font) return 'text tool did not become active';
+  await draw.locator('canvas').click({ position: { x: 40, y: 40 }, force: true, noWaitAfter: true });
+  await page.waitForTimeout(300);
   await draw.getByRole('button', { name: 'Place on Shirt' }).click({ force: true, noWaitAfter: true });
   const submit = shirt.getByRole('button', { name: 'Done & Submit' });
   const enabled = await expect(submit)
