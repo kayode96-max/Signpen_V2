@@ -161,8 +161,10 @@ test('6 UI signing on the board', async ({ page }, testInfo) => {
   const opened = await openSigningDialog(page);
   expect(opened.ok, `${project} ${opened.evidence} passThePhone=${phone}`).toBe(true);
   const name = `QA-17-${project.replace(/\s+/g, '')}-${Date.now()}`;
-  await page.getByRole('dialog').filter({ hasText: 'Before you sign' }).getByLabel('Your Name').fill(name);
-  await page.getByRole('dialog').filter({ hasText: 'Before you sign' }).getByLabel('Your Note').fill('preview ui check');
+  const form = page.getByRole('dialog').filter({ hasText: 'Before you sign' });
+  // The visible labels are not wired with htmlFor, so the placeholders are the fields.
+  await form.getByPlaceholder('Jane Doe').fill(name);
+  await form.getByPlaceholder('Wishing you all the best!').fill('preview ui check');
   const openShirt = page.getByRole('button', { name: /Open T-Shirt|Continue/ });
   const label = (await openShirt.textContent()) ?? '';
   if (/Continue/i.test(label)) {
