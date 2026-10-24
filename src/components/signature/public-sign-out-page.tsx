@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import ThankYouDialog from "./thank-you-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Info, MessageSquare } from "lucide-react";
-import { useDoc, useCollection, doc, collection, query, getDoc, signInAnonymously, initializeFirebase } from "@/supabase";
+import { useDoc, useCollection, doc, collection, query, signInAnonymously, initializeFirebase } from "@/supabase";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
@@ -46,7 +46,7 @@ export default function PublicSignOutPage() {
   const studentId = params.studentId as string;
 
   const studentDocRef = useMemo(
-    () => (firestore ? doc(firestore, `students/${studentId}`) : null),
+    () => (firestore ? doc(firestore, `publicStudents/${studentId}`) : null),
     [studentId]
   );
   const signaturesQuery = useMemo(
@@ -77,12 +77,11 @@ export default function PublicSignOutPage() {
     const checkIp = async () => {
       setIsCheckingIp(true);
       try {
-        const res = await fetch("/api/ip");
-        const { ip } = await res.json();
-        if (ip && firestore) {
-          const ipDocRef = doc(firestore, `students/${studentId}/signedIps`, ip);
-          const ipDoc = await getDoc(ipDocRef);
-          if (ipDoc.exists()) setHasAlreadySigned(true);
+        // signed_ips is server-only; the API checks the caller's IP for us.
+        const res = await fetch(`/api/signatures?studentId=${encodeURIComponent(studentId)}`);
+        if (res.ok) {
+          const { alreadySigned } = await res.json();
+          if (alreadySigned) setHasAlreadySigned(true);
         }
       } catch (error) {
         console.error("IP check failed:", error);

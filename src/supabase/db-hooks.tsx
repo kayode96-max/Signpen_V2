@@ -26,6 +26,10 @@ export function query(ref: MockRef, ...constraints: any[]): MockRef {
 export function parsePath(path: string) {
   const parts = path.split('/').filter(Boolean);
   
+  // Public board profile: students is owner-only, so read the public fields via RPC.
+  if (parts.length === 2 && parts[0] === 'publicStudents') {
+    return { table: 'students', id: parts[1], keyField: 'id', rpc: 'get_student_public' as string | undefined };
+  }
   if (parts.length === 2 && parts[0] === 'students') {
     return { table: 'students', id: parts[1], keyField: 'id' };
   }
@@ -84,14 +88,17 @@ export function useDoc<T = any>(
     }
 
     const parsed = parsePath(docRef.path);
+    const rpcName = 'rpc' in parsed ? parsed.rpc : undefined;
 
     const fetchDoc = async () => {
       try {
-        const { data: row, error: fetchErr } = await supabase
-          .from(parsed.table)
-          .select('*')
-          .eq(parsed.keyField || 'id', parsed.id)
-          .maybeSingle();
+        const { data: row, error: fetchErr } = rpcName
+          ? await supabase.rpc(rpcName, { p_id: parsed.id }).maybeSingle()
+          : await supabase
+              .from(parsed.table)
+              .select('*')
+              .eq(parsed.keyField || 'id', parsed.id)
+              .maybeSingle();
 
         if (fetchErr) throw fetchErr;
         
@@ -119,6 +126,15 @@ export function useDoc<T = any>(
 
     if (typeof window !== 'undefined') {
       window.addEventListener('supabase-write', handleLocalWrite);
+    }
+
+    // RPC-backed public docs have no realtime feed (students rows are not published).
+    if (rpcName) {
+      return () => {
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('supabase-write', handleLocalWrite);
+        }
+      };
     }
 
     const channel = supabase

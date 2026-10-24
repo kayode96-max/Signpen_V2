@@ -12,6 +12,45 @@ type SignatureCreateRequest = {
   };
 };
 
+function getClientIp(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+    req.headers.get('x-real-ip') ||
+    '127.0.0.1'
+  );
+}
+
+// GET /api/signatures?studentId=... -> { alreadySigned: boolean } for the caller's IP.
+// signed_ips is not readable from the browser; IPs are stored as salted hashes.
+export async function GET(req: NextRequest) {
+  const studentId = req.nextUrl.searchParams.get('studentId');
+  if (!studentId) {
+    return NextResponse.json({ error: 'studentId is required.' }, { status: 400 });
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return NextResponse.json(
+      { error: 'Supabase credentials are not configured on the server.' },
+      { status: 503 }
+    );
+  }
+
+  const client = createClient(supabaseUrl, supabaseAnonKey);
+  const { data, error } = await client.rpc('has_signed_ip', {
+    p_student_id: studentId,
+    p_ip: getClientIp(req),
+  });
+
+  if (error) {
+    console.error('has_signed_ip failed:', error);
+    return NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ alreadySigned: data === true });
+}
+
 export async function POST(req: NextRequest) {
   let body: SignatureCreateRequest;
 
@@ -79,16 +118,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Extract visitor IP
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
-               req.headers.get('x-real-ip') || 
-               '127.0.0.1';
+    const ip = getClientIp(req);
 
-    // 3. Query signed_ips to check for duplicates
-    const { data: existingIps, error: checkError } = await userClient
-      .from('signed_ips')
-      .select('*')
-      .eq('studentId', body.studentId)
-      .eq('ipAddress', ip);
+    // 3. Check signed_ips (server-only, hashed) for duplicates
+    const { data: alreadySigned, error: checkError } = await userClient.rpc('has_signed_ip', {
+      p_student_id: body.studentId,
+      p_ip: ip,
+    });
 
     if (checkError) {
       console.error('Failed to query signed_ips table:', checkError);
@@ -98,7 +134,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (existingIps && existingIps.length > 0) {
+    if (alreadySigned === true) {
       return NextResponse.json(
         { error: 'You have already signed this board from this IP.' },
         { status: 409 }
@@ -127,12 +163,10 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Track client IP in signed_ips to prevent spam
-    const { error: ipInsertError } = await userClient
-      .from('signed_ips')
-      .insert({
-        studentId: body.studentId,
-        ipAddress: ip,
-      });
+    const { error: ipInsertError } = await userClient.rpc('record_signed_ip', {
+      p_student_id: body.studentId,
+      p_ip: ip,
+    });
 
     if (ipInsertError) {
       // Log error but do not fail the request since signature is already recorded
