@@ -1,7 +1,8 @@
 -- Rollback for 20261025030000_rls_v2_lockdown.sql ONLY.
 -- Restores the post-hotfix (PR #24) grants and policies so the hotfix app build
 -- can write again (browser inserts into signatures and feedback, owner
--- update/delete on signatures, hotfix GET /api/signatures via has_signed_ip).
+-- update/delete on signatures). has_signed_ip stays service_role only: the
+-- hotfix app calls it with the service role key, not the anon key.
 -- Steps 1 and 2 (schema + functions) are additive and stay in place; the
 -- v2 app keeps working after this rollback too, just without the lockdown.
 -- Never restores plaintext IPs, public student reads or email reads.
@@ -38,8 +39,10 @@ create policy "Allow owner update/delete access for signatures" on public.signat
 grant select on public.signatures to anon, authenticated;
 grant insert, update, delete on public.signatures to authenticated;
 
--- signed_ips: hotfix GET /api/signatures calls has_signed_ip with the anon key.
-grant execute on function public.has_signed_ip(uuid, text) to anon, authenticated;
+-- signed_ips: has_signed_ip stays service_role only. Do not grant it to anon
+-- or authenticated; the hotfix app calls it through the service role key.
+revoke all on function public.has_signed_ip(uuid, text) from public, anon, authenticated;
+grant execute on function public.has_signed_ip(uuid, text) to service_role;
 
 -- thank_you_cards
 drop policy if exists thank_you_cards_owner_all on public.thank_you_cards;

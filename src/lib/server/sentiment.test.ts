@@ -115,6 +115,50 @@ describe('migration contract', () => {
     expect(functions).not.toMatch(/grant execute on function public\.(insert_signature|insert_feedback|signature_challenge_required|record_signed_ip)\([^)]*\) to (anon|authenticated)/);
   });
 
+  it('limits has_signed_ip and other server-only functions to service_role in v2 functions', () => {
+    expect(functions).toContain(
+      'revoke all on function public.has_signed_ip(uuid, text) from public, anon, authenticated'
+    );
+    expect(functions).toContain(
+      'grant execute on function public.has_signed_ip(uuid, text) to service_role'
+    );
+    const hasSignedAt = functions.indexOf('revoke all on function public.has_signed_ip(uuid, text)');
+    expect(hasSignedAt).toBeGreaterThan(functions.indexOf('function public.record_signed_ip'));
+    expect(hasSignedAt).toBeLessThan(functions.indexOf('function public.signatures_public'));
+
+    const rollback = read(
+      '../rollback/20261025030000_rls_v2_lockdown_rollback.sql'
+    );
+    const serverOnly = [
+      'has_signed_ip(uuid, text)',
+      'record_signed_ip(uuid, text)',
+      'signer_has_signed(uuid, uuid)',
+      'signer_can_modify(uuid, uuid)',
+      'is_real_actor(uuid)',
+      'insert_signature(uuid, uuid, text, text, text, jsonb, boolean, text, boolean)',
+      'signature_challenge_required(uuid, text)',
+      'owner_set_signature_hidden(uuid, uuid, boolean)',
+      'signer_update_signature(uuid, uuid, text, text, text, jsonb, boolean)',
+      'delete_signature(uuid, uuid)',
+      'sentiment_usage_today(uuid)',
+      'consume_sentiment_call(uuid)',
+      'insert_feedback(text, text, text, text, smallint, text)',
+      'purge_old_signed_ips()',
+    ];
+    const shipped = [init, functions, lockdown, rollback];
+    for (const signature of serverOnly) {
+      const grant = new RegExp(
+        `grant execute on function public\\.${signature.replace(/[()]/g, '\\$&')}\\s+to\\s+[^;]*\\b(anon|authenticated)\\b`
+      );
+      for (const sql of shipped) {
+        expect(sql).not.toMatch(grant);
+      }
+    }
+    expect(rollback).toContain(
+      'grant execute on function public.has_signed_ip(uuid, text) to service_role'
+    );
+  });
+
   it('keeps the public board RPC and the feedback view shape', () => {
     const fn = rls.slice(rls.indexOf('function public.get_student_public'));
     const returns = fn.slice(0, fn.indexOf('language sql'));

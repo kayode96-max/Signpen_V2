@@ -139,7 +139,8 @@ grant execute on function public.signer_has_signed(uuid, uuid) to service_role;
 -- record_signed_ip now adds one row per call (signed_ips has a surrogate key),
 -- so rows from the hotfix app still count toward the hourly cap. Returns true
 -- when it is the first row for that IP on that board.
--- has_signed_ip is unchanged here; step 3 limits it to service_role.
+-- has_signed_ip keeps the hotfix body. It is service_role only from this file
+-- on, not only after the lockdown step. The browser must not probe (board, IP).
 -- ---------------------------------------------------------------------------
 create or replace function public.record_signed_ip(p_student_id uuid, p_ip text)
 returns boolean
@@ -166,6 +167,9 @@ $$;
 alter function public.record_signed_ip(uuid, text) owner to postgres;
 revoke all on function public.record_signed_ip(uuid, text) from public, anon, authenticated;
 grant execute on function public.record_signed_ip(uuid, text) to service_role;
+
+revoke all on function public.has_signed_ip(uuid, text) from public, anon, authenticated;
+grant execute on function public.has_signed_ip(uuid, text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Public reads

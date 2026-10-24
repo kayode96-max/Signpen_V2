@@ -130,9 +130,9 @@ create trigger signatures_guard
   for each row execute function public.tg_signatures_guard();
 
 -- ---------------------------------------------------------------------------
--- signed_ips: still no grants or policies. has_signed_ip was callable by
--- anon/authenticated for the hotfix app's GET /api/signatures; this app no
--- longer uses it, and an open boolean oracle on (board, IP) leaks who signed.
+-- signed_ips: still no grants or policies. v2_functions already limits
+-- has_signed_ip to service_role; repeat that here so a later grant cannot
+-- leave an open boolean oracle on (board, IP).
 -- ---------------------------------------------------------------------------
 revoke all on table public.signed_ips from public, anon, authenticated;
 revoke all on function public.has_signed_ip(uuid, text) from public, anon, authenticated;
