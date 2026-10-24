@@ -143,7 +143,7 @@ export default function ContactPage() {
         type === 'review' ? `Rating: ${rating} Stars\n` : ''
       }\nMessage:\n${message || '[No message typed yet]'}\n\nSent from SignPen Contact Page.`
     );
-    window.open(`mailto:support@signpen.com?subject=${emailSubject}&body=${emailBody}`, '_blank');
+    window.open(`mailto:support@signpen.xyz?subject=${emailSubject}&body=${emailBody}`, '_blank');
   };
 
   // Helper to color type tags
