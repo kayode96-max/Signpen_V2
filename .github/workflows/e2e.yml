@@ -9,6 +9,10 @@ on:
         description: Preview or local URL to test
         required: true
         type: string
+      spec:
+        description: Optional spec path, for example e2e/hotfix-24.spec.ts
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -26,7 +30,9 @@ concurrency:
 jobs:
   test:
     name: Playwright smoke
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && contains(github.event.deployment_status.environment, 'Preview')) }}
+    # deployment_status stays in `on` so the workflow is valid, but the job is
+    # paused until the #24 hotfix run is collected. workflow_dispatch still runs.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -88,20 +94,53 @@ jobs:
           const refs = new Set();
           const seen = new Set();
           const queue = [new URL("/", base).href];
+          const jar = new Map();
           const collect = (text) => {
             for (const match of text.matchAll(/https:\/\/([a-z0-9-]+)\.supabase\.co/gi)) {
               refs.add(match[1].toLowerCase());
             }
+          };
+          // Manual redirects: x-vercel-set-bypass-cookie answers with a redirect,
+          // and Node fetch does not store the cookie, so redirect:"follow" loops.
+          const fetchSettled = async (target) => {
+            let current = target;
+            for (let hop = 0; hop < 4; hop++) {
+              const cookie = [...jar.entries()].map(([name, value]) => name + "=" + value).join("; ");
+              const hopHeaders = { ...headers };
+              if (cookie) hopHeaders.cookie = cookie;
+              const response = await fetch(current, { headers: hopHeaders, redirect: "manual" });
+              const setCookies = typeof response.headers.getSetCookie === "function"
+                ? response.headers.getSetCookie()
+                : [];
+              for (const raw of setCookies) {
+                const pair = raw.split(";")[0];
+                const eq = pair.indexOf("=");
+                if (eq > 0) jar.set(pair.slice(0, eq), pair.slice(eq + 1));
+              }
+              if (response.status >= 300 && response.status < 400) {
+                const location = response.headers.get("location");
+                if (!location) return { status: response.status, text: "" };
+                const next = new URL(location, current);
+                if (next.origin !== base.origin) {
+                  console.error("Refusing redirect off the preview origin (HTTP " + response.status + ")");
+                  process.exit(1);
+                }
+                current = next.href;
+                continue;
+              }
+              return { status: response.status, text: await response.text() };
+            }
+            console.error("Preview redirect did not settle");
+            process.exit(1);
           };
           let firstStatus = 0;
           while (queue.length > 0 && seen.size < 25) {
             const target = queue.shift();
             if (seen.has(target)) continue;
             seen.add(target);
-            const response = await fetch(target, { headers, redirect: "follow" });
-            const text = await response.text();
+            const { status, text } = await fetchSettled(target);
             if (seen.size === 1) {
-              firstStatus = response.status;
+              firstStatus = status;
               const lowered = text.toLowerCase();
               const wall = firstStatus === 401 || firstStatus === 403
                 || lowered.includes("authentication required")
@@ -134,7 +173,22 @@ jobs:
         env:
           # Do not echo this. Playwright sends it as x-vercel-protection-bypass.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: npm run test:e2e
+          E2E_SPEC: ${{ github.event.inputs.spec }}
+          E2E_HOTFIX: ${{ github.event.inputs.spec == 'e2e/hotfix-24.spec.ts' && '1' || '' }}
+        run: |
+          if [ -n "$E2E_SPEC" ]; then
+            case "$E2E_SPEC" in
+              e2e/*.spec.ts)
+                npm run test:e2e -- "$E2E_SPEC"
+                ;;
+              *)
+                echo "Refusing spec filter"
+                exit 1
+                ;;
+            esac
+          else
+            npm run test:e2e
+          fi
 
       - name: Upload perf baseline
         if: always()
