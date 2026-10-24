@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
+// Per-caller (per IP). Never statically generated, ISR-cached, or shared via s-maxage.
+export const dynamic = 'force-dynamic';
+
+const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' };
+
+function getJson(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: PRIVATE_NO_STORE });
+}
+
 type SignatureCreateRequest = {
   studentId?: string;
   signatureImageUrl?: string;
@@ -23,19 +32,17 @@ function getClientIp(req: NextRequest): string {
 
 // GET /api/signatures?studentId=... -> { alreadySigned: boolean } for the caller's IP.
 // has_signed_ip is service_role only. The browser calls this route, never the RPC.
+// Every status (200, 4xx, 5xx) is private and uncached: the answer depends on the caller IP.
 export async function GET(req: NextRequest) {
   const studentId = req.nextUrl.searchParams.get('studentId');
   if (!studentId) {
-    return NextResponse.json({ error: 'studentId is required.' }, { status: 400 });
+    return getJson({ error: 'studentId is required.' }, 400);
   }
 
   const admin = getSupabaseAdmin();
   if (!admin) {
     console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing the already-signed check.');
-    return NextResponse.json(
-      { error: 'Signing is temporarily unavailable.' },
-      { status: 503 }
-    );
+    return getJson({ error: 'Signing is temporarily unavailable.' }, 503);
   }
 
   const { data, error } = await admin.rpc('has_signed_ip', {
@@ -45,10 +52,10 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error('has_signed_ip failed:', error);
-    return NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 });
+    return getJson({ error: 'Failed to verify signing history.' }, 500);
   }
 
-  return NextResponse.json({ alreadySigned: data === true });
+  return getJson({ alreadySigned: data === true });
 }
 
 export async function POST(req: NextRequest) {
