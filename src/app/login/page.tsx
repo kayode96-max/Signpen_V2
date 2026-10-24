@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import Image from "next/image";
+import SignpenLogo from "@/components/brand/signpen-logo";
 
 export default function LoginPage() {
   const { user, isUserLoading } = useUser();
@@ -39,12 +39,9 @@ export default function LoginPage() {
       >
         <div className="hidden md:flex flex-col space-y-6 text-left">
           <Link href="/" className="inline-flex items-center gap-2 mb-2">
-             <Image
-                src="/images/signpen.png"
-                alt="SignPen Logo"
-                width={140}
-                height={70}
-                className="object-contain filter invert opacity-90"
+             <SignpenLogo
+                title="SignPen Logo"
+                className="h-[70px] w-[140px] filter invert opacity-90"
               />
           </Link>
           <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-white font-headline leading-tight">
@@ -59,12 +56,9 @@ export default function LoginPage() {
           <CardHeader className="text-center pb-6">
             <div className="md:hidden flex justify-center mb-6">
               <Link href="/" className="inline-flex items-center gap-2">
-                 <Image
-                    src="/images/signpen.png"
-                    alt="SignPen Logo"
-                    width={100}
-                    height={50}
-                    className="object-contain filter invert opacity-90"
+                 <SignpenLogo
+                    title="SignPen Logo"
+                    className="h-[50px] w-[100px] filter invert opacity-90"
                   />
               </Link>
             </div>

@@ -85,8 +85,11 @@ const Features = () => {
         </motion.div>
 
         <div className="mx-auto grid max-w-5xl items-center gap-12 md:gap-16 lg:grid-cols-3 lg:max-w-none mt-16">
-          {features.map((feature, index) => {
+          {features.map((feature) => {
             const placeholder = PlaceHolderImages.find(p => p.id === feature.imageId);
+            const image = placeholder?.imageUrl;
+            const width = !image || typeof image === 'string' ? 600 : image.width;
+            const height = !image || typeof image === 'string' ? 400 : image.height;
             return (
               <motion.div
                 key={feature.title}
@@ -100,12 +103,14 @@ const Features = () => {
                   className="w-full aspect-video rounded-xl overflow-hidden shadow-2xl border-4 border-zinc-800 bg-zinc-900 transition-all duration-500 group-hover:border-primary group-hover:shadow-primary/20"
                   variants={featureImageVariants}
                 >
-                  {placeholder && (
+                  {image && placeholder && (
                     <Image
-                      src={placeholder.imageUrl}
+                      src={image}
                       alt={feature.title}
-                      width={600}
-                      height={400}
+                      width={width}
+                      height={height}
+                      sizes="(max-width: 1024px) 100vw, 33vw"
+                      loading="lazy"
                       data-ai-hint={placeholder.imageHint}
                       className="object-cover w-full h-full transition-transform duration-700 ease-out group-hover:scale-105"
                     />
