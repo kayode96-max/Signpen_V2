@@ -133,9 +133,11 @@ export function jsonHasEmailField(value: unknown): boolean {
 }
 
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  page: async ({ page }, provide) => {
     await installReadOnlyGuard(page);
-    await use(page);
+    // Named `provide` so the React hooks rule does not treat this Playwright
+    // fixture callback as the React `use` hook.
+    await provide(page);
   },
 });
 

@@ -30,6 +30,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The suite lives with this workflow. The preview URL is the system
+          # under test, so a deployment_status run keeps this checkout and
+          # points BASE_URL at the deployment.
           persist-credentials: false
 
       - name: Set up Node.js
@@ -38,18 +41,91 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Require BASE_URL
-        run: test -n "$BASE_URL"
+      - name: Require a non-production BASE_URL
+        run: |
+          test -n "$BASE_URL"
+          node --input-type=module <<'EOF'
+          const raw = process.env.BASE_URL;
+          let url;
+          try {
+            url = new URL(raw);
+          } catch {
+            console.error("BASE_URL is not an absolute URL");
+            process.exit(1);
+          }
+          const host = url.hostname.toLowerCase();
+          if (host === "signpen.xyz" || host === "www.signpen.xyz" || host.endsWith(".signpen.xyz")) {
+            console.error("Refusing production host");
+            process.exit(1);
+          }
+          console.log(`Testing host ${host}`);
+          EOF
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Confirm the preview Supabase and that protection is bypassed
+        env:
+          # GitHub masks this value in logs. Do not echo it.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node --input-type=module <<'EOF'
+        const secret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() ?? "";
+        console.log(`Vercel protection bypass header: ${secret ? "set" : "unset"}`);
+        const headers = {};
+        if (secret) {
+          headers["x-vercel-protection-bypass"] = secret;
+          headers["x-vercel-set-bypass-cookie"] = "true";
+        }
+        const previewRef = "vackuntdjgfmxhwxjuqt";
+        const productionRef = "avsguiynrukacgqnxwku";
+        const base = new URL(process.env.BASE_URL);
+        const refs = new Set();
+        const seen = new Set();
+        const queue = [new URL("/", base).href];
+        const collect = (text) => {
+          for (const match of text.matchAll(/https:\/\/([a-z0-9-]+)\.supabase\.co/gi)) {
+            refs.add(match[1].toLowerCase());
+          }
+        };
+        let firstStatus = 0;
+        while (queue.length > 0 && seen.size < 25) {
+          const target = queue.shift();
+          if (seen.has(target)) continue;
+          seen.add(target);
+          const response = await fetch(target, { headers, redirect: "follow" });
+          const text = await response.text();
+          if (seen.size === 1) {
+            firstStatus = response.status;
+            const lowered = text.toLowerCase();
+            const wall = firstStatus === 401 || firstStatus === 403
+              || lowered.includes("authentication required")
+              || lowered.includes("vercel.com/login")
+              || lowered.includes("vercel authentication");
+            if (wall) {
+              console.error(`Preview is behind a Vercel login wall (HTTP ${firstStatus})`);
+              process.exit(1);
+            }
+            for (const match of text.matchAll(/(?:src|href)="([^"]+\.js[^"]*)"/g)) {
+              const next = new URL(match[1], target);
+              if (next.origin === base.origin) queue.push(next.href);
+            }
+          }
+          collect(text);
+        }
+        console.log(`Preview HTTP ${firstStatus}`);
+        console.log(`Supabase refs: ${[...refs].join(", ") || "none"}`);
+        if (refs.has(productionRef) || !refs.has(previewRef)) {
+          console.error(`Refusing to test a deployment that is not Supabase project ${previewRef}`);
+          process.exit(1);
+        }
+        EOF
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium webkit
 
       - name: Smoke
         env:
-          # Optional. Unset until the repo secret exists. The value is not printed.
+          # Do not echo this. Playwright sends it as x-vercel-protection-bypass.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: npm run test:e2e
 
