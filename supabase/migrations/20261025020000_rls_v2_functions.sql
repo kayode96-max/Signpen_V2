@@ -324,7 +324,9 @@ grant execute on function public.signature_challenge_required(uuid, text) to ser
 -- Signature edits and deletes (service_role only). Each re-checks the actor and
 -- returns 'ok' | 'not_found' | 'forbidden'. The owner function writes only
 -- hidden_by_owner, so the owner can never change private_by_signer. The signer
--- function never writes hidden_by_owner.
+-- function never writes hidden_by_owner, and returns forbidden when the owner
+-- has hidden the row. Delete still calls signer_can_modify, which does not look
+-- at hidden_by_owner, so a signer can delete their own row inside 24 hours.
 -- ---------------------------------------------------------------------------
 create or replace function public.owner_set_signature_hidden(
   p_actor uuid,
@@ -368,9 +370,19 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  owner_hidden boolean;
 begin
-  if not exists (select 1 from public.signatures where id = p_signature_id) then
+  select hidden_by_owner into owner_hidden
+  from public.signatures
+  where id = p_signature_id;
+  if not found then
     return 'not_found';
+  end if;
+  -- signer_can_modify is also the delete check, so a hidden row stays
+  -- deletable. Only this edit refuses it.
+  if owner_hidden then
+    return 'forbidden';
   end if;
   if not public.signer_can_modify(p_signature_id, p_actor) then
     return 'forbidden';

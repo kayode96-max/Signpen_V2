@@ -314,7 +314,8 @@ describe('migration contract', () => {
     expect(signerFn).toContain("return 'forbidden'");
     expect(signerFn).toContain('public.signer_can_modify(p_signature_id, p_actor)');
     expect(signerFn).toContain('private_by_signer = coalesce(p_private, private_by_signer)');
-    expect(signerFn).not.toContain('hidden_by_owner');
+    expect(signerFn).toContain('select hidden_by_owner into owner_hidden');
+    expect(signerFn).not.toMatch(/set\s+hidden_by_owner/);
 
     const deleteFn = rls.slice(
       rls.indexOf('function public.delete_signature('),
@@ -325,6 +326,7 @@ describe('migration contract', () => {
     expect(deleteFn).toContain("return 'forbidden'");
     expect(deleteFn).toContain('public.is_real_actor(p_actor)');
     expect(deleteFn).toContain('public.signer_can_modify(p_signature_id, p_actor)');
+    expect(deleteFn).not.toContain('hidden_by_owner');
 
     expect(rls).toContain(
       'revoke all on function public.is_real_actor(uuid) from public, anon, authenticated, service_role'
@@ -339,5 +341,47 @@ describe('migration contract', () => {
     expect(rls).not.toContain(
       'grant execute on function public.signer_can_modify(uuid, uuid) to authenticated'
     );
+  });
+
+  it('refuses a signer edit when the owner has hidden the row, and still allows delete', () => {
+    const signerFn = functions.slice(
+      functions.indexOf('function public.signer_update_signature('),
+      functions.indexOf('alter function public.signer_update_signature')
+    );
+    const hiddenGuard = signerFn.indexOf('if owner_hidden then');
+    const canModifyCheck = signerFn.indexOf('if not public.signer_can_modify');
+    const update = signerFn.indexOf('update public.signatures');
+    expect(hiddenGuard).toBeGreaterThan(-1);
+    expect(canModifyCheck).toBeGreaterThan(hiddenGuard);
+    expect(update).toBeGreaterThan(canModifyCheck);
+    expect(signerFn.slice(hiddenGuard, canModifyCheck)).toContain("return 'forbidden'");
+    expect(signerFn.slice(hiddenGuard, canModifyCheck)).not.toContain('signer_can_modify');
+
+    const canModify = functions.slice(
+      functions.indexOf('function public.signer_can_modify(p_signature_id uuid, p_actor uuid)'),
+      functions.indexOf('alter function public.signer_can_modify(uuid, uuid)')
+    );
+    expect(canModify).not.toContain('hidden_by_owner');
+    const canModifySession = functions.slice(
+      functions.indexOf('function public.signer_can_modify(p_signature_id uuid)\n'),
+      functions.indexOf('alter function public.signer_can_modify(uuid) owner')
+    );
+    expect(canModifySession).toContain('public.signer_can_modify(p_signature_id, auth.uid())');
+    expect(canModifySession).not.toContain('hidden_by_owner');
+
+    const deleteFn = functions.slice(
+      functions.indexOf('function public.delete_signature('),
+      functions.indexOf('alter function public.delete_signature')
+    );
+    expect(deleteFn).toContain('public.signer_can_modify(p_signature_id, p_actor)');
+    expect(deleteFn).toContain('public.is_real_actor(p_actor)');
+    expect(deleteFn).not.toContain('hidden_by_owner');
+
+    const ownerFn = functions.slice(
+      functions.indexOf('function public.owner_set_signature_hidden('),
+      functions.indexOf('alter function public.owner_set_signature_hidden')
+    );
+    expect(ownerFn).toContain('set hidden_by_owner = p_hidden');
+    expect(ownerFn).not.toContain('signer_can_modify');
   });
 });
