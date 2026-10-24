@@ -30,14 +30,13 @@ concurrency:
 jobs:
   test:
     name: Playwright smoke
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && contains(github.event.deployment_status.environment, 'Preview')) }}
+    # deployment_status remains a trigger, but the job stays paused so this
+    # revert does not start a second smoke while the #24 run is in flight.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      # One-shot target: current PR #24 preview (8cdf26d). workflow_dispatch is
-      # 403 for this token, so this deployment_status run carries the bypass
-      # secret. The next commit restores the deployment URL expression.
-      BASE_URL: https://signpen-v2-esfj9yofv-abdullahi-usmans-projects-58e45ce7.vercel.app
+      BASE_URL: ${{ github.event.inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -174,8 +173,8 @@ jobs:
         env:
           # Do not echo this. Playwright sends it as x-vercel-protection-bypass.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          E2E_SPEC: e2e/hotfix-24.spec.ts
-          E2E_HOTFIX: '1'
+          E2E_SPEC: ${{ github.event.inputs.spec }}
+          E2E_HOTFIX: ${{ github.event.inputs.spec == 'e2e/hotfix-24.spec.ts' && '1' || '' }}
         run: |
           if [ -n "$E2E_SPEC" ]; then
             case "$E2E_SPEC" in
