@@ -167,7 +167,10 @@ export async function updatePassword(user: any, newPassword: string) {
   if (error) throw error;
 }
 
-export async function deleteUser(_user: any) {
+export async function deleteUser(user: { uid?: string } | null) {
+  if (!user) {
+    throw new Error('You need to be signed in to delete your account.');
+  }
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {

@@ -43,6 +43,11 @@ export function parsePath(path: string) {
   return { table: parts[0] || '', id: parts[1], keyField: 'id' };
 }
 
+/** Signature writes go through /api/signatures. The browser must not update or delete rows. */
+function refuseSignatureWrite(table: string): boolean {
+  return table === 'signatures';
+}
+
 export function useDoc<T = any>(
   docRef: MockRef | null | undefined
 ) {
@@ -247,6 +252,8 @@ export function setDocumentNonBlocking(docRef: MockRef, data: any, options?: { m
         if (error) console.error("Error setting document:", error);
         else success = true;
       }
+    } else if (refuseSignatureWrite(parsed.table)) {
+      console.error('Signature changes go through /api/signatures.');
     } else {
       const payload = { id: parsed.id, ...data };
       if (options?.merge) {
@@ -272,6 +279,10 @@ export function setDocumentNonBlocking(docRef: MockRef, data: any, options?: { m
 
 export function updateDocumentNonBlocking(docRef: MockRef, data: any) {
   const parsed = parsePath(docRef.path);
+  if (refuseSignatureWrite(parsed.table)) {
+    console.error('Signature changes go through /api/signatures.');
+    return;
+  }
   
   const execute = async () => {
     const { error } = await supabase
@@ -294,6 +305,10 @@ export function updateDocumentNonBlocking(docRef: MockRef, data: any) {
 
 export function addDocumentNonBlocking(colRef: MockRef, data: any) {
   const parsed = parsePath(colRef.path);
+  if (refuseSignatureWrite(parsed.table)) {
+    console.error('Signature changes go through /api/signatures.');
+    return Promise.reject(new Error('Signature changes go through /api/signatures.'));
+  }
   
   const execute = async () => {
     const { data: inserted, error } = await supabase
@@ -320,6 +335,10 @@ export function addDocumentNonBlocking(colRef: MockRef, data: any) {
 
 export function deleteDocumentNonBlocking(docRef: MockRef) {
   const parsed = parsePath(docRef.path);
+  if (refuseSignatureWrite(parsed.table)) {
+    console.error('Signature changes go through /api/signatures.');
+    return;
+  }
   
   const execute = async () => {
     const { error } = await supabase

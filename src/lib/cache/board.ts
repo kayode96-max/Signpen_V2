@@ -3,5 +3,5 @@
  * signature write and a public page share the same string.
  */
 export function boardCacheTag(studentId: string): string {
-  return `board:${studentId}`;
+  return `board:${studentId.trim().toLowerCase()}`;
 }

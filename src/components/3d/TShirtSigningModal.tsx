@@ -33,6 +33,7 @@ import {
 import SignatureCanvas, { type SignatureCanvasRef } from '@/components/signature/signature-canvas';
 import { cn } from '@/lib/utils';
 import type { TShirtCanvasRef, ExistingSignature } from './TShirtCanvas';
+import { SignatureFlowError } from '@/lib/public/signing-flow';
 
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
   ssr: false,
@@ -187,6 +188,10 @@ export default function TShirtSigningModal({
     try {
       await onSave(pendingPlacement);
       onOpenChange(false);
+    } catch (err) {
+      if (err instanceof SignatureFlowError && err.code === 'already_signed') {
+        onOpenChange(false);
+      }
     } finally {
       setIsSaving(false);
     }

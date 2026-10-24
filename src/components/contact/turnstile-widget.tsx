@@ -28,7 +28,7 @@ declare global {
  */
 export default function TurnstileWidget({
   onToken,
-  unavailableMessage = 'Feedback posting is unavailable until NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured.',
+  unavailableMessage = "Feedback is unavailable right now.",
 }: {
   onToken: (token: string | null) => void;
   unavailableMessage?: string;
