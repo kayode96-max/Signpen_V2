@@ -3,6 +3,7 @@ import type { Signature, Student } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { GraduationCap } from "lucide-react";
 import Image from "next/image";
+import SignpenLogo from "@/components/brand/signpen-logo";
 
 interface ThankYouCardProps {
   signature: Signature;
@@ -44,7 +45,7 @@ export default function ThankYouCard({ signature, student, customMessage, theme 
       </div>
 
       <div className="mt-auto text-center flex items-center justify-center text-xs opacity-70 gap-2">
-        <Image src="/ui/signpen.png" alt="SignPen Logo" width={20} height={20} />
+        <SignpenLogo title="SignPen Logo" className="h-5 w-5" />
         <span>From {student.name}'s SignPen Board</span>
       </div>
     </div>
