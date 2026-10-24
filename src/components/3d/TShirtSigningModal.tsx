@@ -31,6 +31,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import SignatureCanvas, { type SignatureCanvasRef } from '@/components/signature/signature-canvas';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { TShirtCanvasRef, ExistingSignature } from './TShirtCanvas';
 
@@ -92,7 +93,7 @@ export default function TShirtSigningModal({
 }: TShirtSigningModalProps): JSX.Element {
   const shirtRef = useRef<TShirtCanvasRef>(null);
   const signatureRef = useRef<SignatureCanvasRef>(null);
-  const hasPlacedOneRef = useRef(false);
+  const { toast } = useToast();
 
   const [pendingUV, setPendingUV] = useState<{ x: number; y: number } | null>(null);
   const [drawOpen, setDrawOpen] = useState(false);
@@ -149,17 +150,13 @@ export default function TShirtSigningModal({
       return;
     }
 
-    if (hasPlacedOneRef.current) {
-      shirt.undoLast();
-    }
-
+    // A rejected spot leaves the current mark where it is and does not change pendingPlacement.
     const ok = shirt.addSignature(sigCanvas, pendingUV, { width: 320, height: 140 });
     if (!ok) {
-      showToast('That spot is too close to another signature.');
+      toast({ title: "Too close to someone else's — tap a free spot." });
       return;
     }
 
-    hasPlacedOneRef.current = true;
     setPendingPlacement({
       signatureImageUrl,
       position: {
@@ -171,7 +168,7 @@ export default function TShirtSigningModal({
     setDrawOpen(false);
     setPendingUV(null);
     showToast('Signature placed! Click Done to save.');
-  }, [pendingUV, dataUrlToCanvas]);
+  }, [pendingUV, dataUrlToCanvas, toast]);
 
   const handleCancelDraw = useCallback(() => {
     setDrawOpen(false);
@@ -241,16 +238,16 @@ export default function TShirtSigningModal({
               <Button
                 size="sm"
                 className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
-                onClick={() => { shirtRef.current?.undoLast(); setPendingPlacement(null); hasPlacedOneRef.current = false; }}
+                onClick={() => { shirtRef.current?.undoLast(); setPendingPlacement(null); }}
               >
                 <Undo2 className="h-4 w-4 mr-2" /> Undo
               </Button>
               <Button
                 size="sm"
                 className="bg-[#1c1c1e] text-white hover:bg-white/10 border border-white/10 rounded-full px-4"
-                onClick={() => { shirtRef.current?.clearAll(); setPendingPlacement(null); hasPlacedOneRef.current = false; showToast('Cleared.'); }}
+                onClick={() => { shirtRef.current?.clearAll(); setPendingPlacement(null); showToast('Cleared.'); }}
               >
-                <Trash2 className="h-4 w-4 mr-2" /> Clear
+                <Trash2 className="h-4 w-4 mr-2" /> Clear mine
               </Button>
               <Button
                 size="sm"
