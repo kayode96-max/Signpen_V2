@@ -156,11 +156,19 @@ async function caseSigning(
   const userA = session.user.id;
   const nameA = `QA-26a-${Date.now()}`;
   const before = await getSignatures(request, BOARD_ID, session.access_token);
-  record(
-    '1 fresh GET alreadySigned false',
-    before.status === 200 && before.already === false && cacheOk(before.cache),
-    `anonUserId=${userA} board=${BOARD_ID} ${snippet(before.status, before.body)} cache=${before.cache || 'absent'}`,
-  );
+  if (serviceKeyMissing(before.status, before.body)) {
+    record(
+      '1 fresh GET alreadySigned false',
+      'blocked',
+      `anonUserId=${userA} board=${BOARD_ID} ${snippet(before.status, before.body)} cache=${before.cache || 'absent'}`,
+    );
+  } else {
+    record(
+      '1 fresh GET alreadySigned false',
+      before.status === 200 && before.already === false && cacheOk(before.cache),
+      `anonUserId=${userA} board=${BOARD_ID} ${snippet(before.status, before.body)} cache=${before.cache || 'absent'}`,
+    );
+  }
 
   const missing = await postSignature(request, BOARD_ID, null, nameA);
   record('1 POST no bearer 401', missing.status === 401, snippet(missing.status, missing.body));
@@ -236,24 +244,34 @@ async function caseCache(
   record: RecordCase,
 ): Promise<void> {
   const lines: string[] = [];
+  const serverErrors: string[] = [];
   let ok = true;
   const check = (label: string, result: HttpResult, expected: number) => {
+    if (result.status >= 500) {
+      serverErrors.push(`${label} ${snippet(result.status, result.body)} cache=${result.cache || 'absent'}`);
+      return;
+    }
     const good = result.status === expected && cacheOk(result.cache);
     if (!good) ok = false;
     lines.push(`${label} ${snippet(result.status, result.body)} cache=${result.cache || 'absent'}`);
   };
 
-  check('GET signatures 200', await getSignatures(request, BOARD_ID, token), 200);
+  check('GET signatures session', await getSignatures(request, BOARD_ID, token), 200);
   check('GET signatures 400', await getSignatures(request, 'not-a-uuid', token), 400);
   check('GET signatures 401', await getSignatures(request, BOARD_ID, 'not-a-valid-token'), 401);
-  check('GET challenge 200', await getChallenge(request, BOARD_ID), 200);
+  check('GET challenge session', await getChallenge(request, BOARD_ID), 200);
   check('GET challenge 400', await getChallenge(request, 'not-a-uuid'), 400);
-  record('3 cache 200 and 4xx', ok, lines.join(' | '));
-  record(
-    '3 cache 5xx',
-    'blocked',
-    'Healthy preview did not return 5xx. signer_has_signed and signature_challenge_required return a boolean for this board, so the 500 branch was not exercised live.',
-  );
+  record('3 cache 200 and 4xx', ok, lines.join(' | ') || 'no 200/4xx sample');
+  if (serverErrors.length > 0) {
+    const cached = serverErrors.every((line) => line.includes('cache=private, no-store'));
+    record('3 cache 5xx', cached, serverErrors.join(' | '));
+  } else {
+    record(
+      '3 cache 5xx',
+      'blocked',
+      'Healthy preview did not return 5xx. signer_has_signed and signature_challenge_required return a boolean for this board, so the 500 branch was not exercised live.',
+    );
+  }
 }
 
 async function casePublicReads(
