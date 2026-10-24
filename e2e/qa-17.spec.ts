@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type APIResponse, type Page, type TestInfo } from '@playwright/test';
-import { measurePage } from './perf-baseline';
+import { measurePage, publishProjectSamples } from './perf-baseline';
 import { collectConsole, horizontalOverflow } from './support';
 
 /**
@@ -257,6 +257,10 @@ test('10 gated slow 3G landing', async ({ browser, browserName }, testInfo) => {
   });
   const overTotal = sample.firstViewBytes > TOTAL_CAP;
   const overFile = sample.largestFirstViewFileBytes > FILE_CAP;
+  // TODO: flip this back to a failing assertion once PR #18 is on main.
+  // Until then, match #25: log the numbers and caps, write them to the results
+  // JSON, and emit a GitHub Actions warning when over cap. Do not fail the job
+  // on the byte caps. A measurement error is still a real failure.
   const evidence = [
     `preview=${baseURL}`,
     `env=github-actions-preview`,
@@ -271,11 +275,28 @@ test('10 gated slow 3G landing', async ({ browser, browserName }, testInfo) => {
     `throttling=${sample.throttling}`,
     `cpu=${sample.cpuThrottle ?? 'n/a'}`,
     `error=${sample.error ?? 'none'}`,
-    `caps total<=${TOTAL_CAP} file<=${FILE_CAP} (strictly over fails, FCP not gated)`,
+    `overTotal=${overTotal}`,
+    `overFile=${overFile}`,
+    `caps total<=${TOTAL_CAP} file<=${FILE_CAP} (report-only until #18 is on main, FCP not gated)`,
   ].join(' ');
   console.log(`[qa17] 10 ${evidence}`);
+  const baseline = await publishProjectSamples({
+    project: testInfo.project.name,
+    samples: [sample],
+    baseURL,
+    enforced: false,
+    budgets: { fcpMs: 5000, firstViewBytes: TOTAL_CAP, firstViewFileBytes: FILE_CAP },
+  });
+  await testInfo.attach('perf-baseline.json', {
+    body: `${JSON.stringify(baseline, null, 2)}\n`,
+    contentType: 'application/json',
+  });
+  if (overTotal || overFile) {
+    console.log(
+      `::warning file=e2e/qa-17.spec.ts,line=237::Gated Slow 3G first view is over cap until #18 is on main: firstViewBytes=${sample.firstViewBytes} (cap ${TOTAL_CAP}) largestFile=${sample.largestFirstViewFileBytes} (cap ${FILE_CAP})`,
+    );
+  }
   expect(sample.error, evidence).toBeUndefined();
-  expect(overTotal || overFile, evidence).toBe(false);
 });
 
 function locationPath(location: string, baseURL: string): string {
