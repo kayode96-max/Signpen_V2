@@ -165,8 +165,7 @@ export default function SettingsPage() {
   const handleDeleteAccount = async () => {
     if (!user) return;
     try {
-        // You might want to delete associated Firestore data here as well
-        // For example: await deleteDoc(doc(firestore, 'students', user.uid));
+        // Server route deletes this account's rows, storage files, and auth user.
         await deleteUser(user);
         toast({
             title: "Account Deleted",
@@ -177,7 +176,7 @@ export default function SettingsPage() {
         toast({
             variant: "destructive",
             title: "Deletion Failed",
-            description: "Please sign in again to delete your account. " + error.message,
+            description: error.message || "Account deletion failed.",
         });
     }
   }
