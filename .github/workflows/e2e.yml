@@ -30,8 +30,7 @@ concurrency:
 jobs:
   test:
     name: Playwright smoke
-    # Paused so this unpin does not start another smoke while the #24 run is in flight.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && contains(github.event.deployment_status.environment, 'Preview')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
