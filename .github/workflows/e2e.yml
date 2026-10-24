@@ -17,7 +17,10 @@ permissions:
 concurrency:
   # One group per deployment. workflow_dispatch runs on the same ref must not
   # cancel each other when they target different preview URLs.
-  group: e2e-${{ github.event.deployment.sha || inputs.base_url || github.ref }}
+  # github.event.inputs is empty for deployment_status, so this falls through
+  # to the deployment sha. The inputs context is not used here: this workflow
+  # also triggers on deployment_status.
+  group: e2e-${{ github.event.deployment.sha || github.event.inputs.base_url || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -27,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      BASE_URL: ${{ github.event.inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,57 +73,59 @@ jobs:
         env:
           # GitHub masks this value in logs. Do not echo it.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: node --input-type=module <<'EOF'
-        const secret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() ?? "";
-        console.log(`Vercel protection bypass header: ${secret ? "set" : "unset"}`);
-        const headers = {};
-        if (secret) {
-          headers["x-vercel-protection-bypass"] = secret;
-          headers["x-vercel-set-bypass-cookie"] = "true";
-        }
-        const previewRef = "vackuntdjgfmxhwxjuqt";
-        const productionRef = "avsguiynrukacgqnxwku";
-        const base = new URL(process.env.BASE_URL);
-        const refs = new Set();
-        const seen = new Set();
-        const queue = [new URL("/", base).href];
-        const collect = (text) => {
-          for (const match of text.matchAll(/https:\/\/([a-z0-9-]+)\.supabase\.co/gi)) {
-            refs.add(match[1].toLowerCase());
+        run: |
+          node --input-type=module <<'EOF'
+          const secret = (process.env.VERCEL_AUTOMATION_BYPASS_SECRET || "").trim();
+          console.log("Vercel protection bypass header: " + (secret ? "set" : "unset"));
+          const headers = {};
+          if (secret) {
+            headers["x-vercel-protection-bypass"] = secret;
+            headers["x-vercel-set-bypass-cookie"] = "true";
           }
-        };
-        let firstStatus = 0;
-        while (queue.length > 0 && seen.size < 25) {
-          const target = queue.shift();
-          if (seen.has(target)) continue;
-          seen.add(target);
-          const response = await fetch(target, { headers, redirect: "follow" });
-          const text = await response.text();
-          if (seen.size === 1) {
-            firstStatus = response.status;
-            const lowered = text.toLowerCase();
-            const wall = firstStatus === 401 || firstStatus === 403
-              || lowered.includes("authentication required")
-              || lowered.includes("vercel.com/login")
-              || lowered.includes("vercel authentication");
-            if (wall) {
-              console.error(`Preview is behind a Vercel login wall (HTTP ${firstStatus})`);
-              process.exit(1);
+          const previewRef = "vackuntdjgfmxhwxjuqt";
+          const productionRef = "avsguiynrukacgqnxwku";
+          const base = new URL(process.env.BASE_URL);
+          const refs = new Set();
+          const seen = new Set();
+          const queue = [new URL("/", base).href];
+          const collect = (text) => {
+            for (const match of text.matchAll(/https:\/\/([a-z0-9-]+)\.supabase\.co/gi)) {
+              refs.add(match[1].toLowerCase());
             }
-            for (const match of text.matchAll(/(?:src|href)="([^"]+\.js[^"]*)"/g)) {
-              const next = new URL(match[1], target);
-              if (next.origin === base.origin) queue.push(next.href);
+          };
+          let firstStatus = 0;
+          while (queue.length > 0 && seen.size < 25) {
+            const target = queue.shift();
+            if (seen.has(target)) continue;
+            seen.add(target);
+            const response = await fetch(target, { headers, redirect: "follow" });
+            const text = await response.text();
+            if (seen.size === 1) {
+              firstStatus = response.status;
+              const lowered = text.toLowerCase();
+              const wall = firstStatus === 401 || firstStatus === 403
+                || lowered.includes("authentication required")
+                || lowered.includes("vercel.com/login")
+                || lowered.includes("vercel authentication");
+              if (wall) {
+                console.error("Preview is behind a Vercel login wall (HTTP " + firstStatus + ")");
+                process.exit(1);
+              }
+              for (const match of text.matchAll(/(?:src|href)="([^"]+\.js[^"]*)"/g)) {
+                const next = new URL(match[1], target);
+                if (next.origin === base.origin) queue.push(next.href);
+              }
             }
+            collect(text);
           }
-          collect(text);
-        }
-        console.log(`Preview HTTP ${firstStatus}`);
-        console.log(`Supabase refs: ${[...refs].join(", ") || "none"}`);
-        if (refs.has(productionRef) || !refs.has(previewRef)) {
-          console.error(`Refusing to test a deployment that is not Supabase project ${previewRef}`);
-          process.exit(1);
-        }
-        EOF
+          const listed = [...refs].join(", ") || "none";
+          console.log("Preview HTTP " + firstStatus);
+          console.log("Supabase refs: " + listed);
+          if (refs.has(productionRef) || !refs.has(previewRef)) {
+            console.error("Refusing to test a deployment that is not Supabase project " + previewRef);
+            process.exit(1);
+          }
+          EOF
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium webkit
