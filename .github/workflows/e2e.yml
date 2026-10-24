@@ -34,10 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      # One-shot target: PR #24 preview at c005f05. workflow_dispatch is 403
-      # for this token, so this deployment_status run carries the bypass
-      # secret. The next commit restores the deployment URL expression.
-      BASE_URL: https://signpen-v2-git-hotfix-0e2f10-abdullahi-usmans-projects-58e45ce7.vercel.app
+      BASE_URL: ${{ github.event.inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -178,9 +175,22 @@ jobs:
           # x-vercel-protection-bypass and x-vercel-set-bypass-cookie: true.
           # Do not echo the secret. Trace stays off while the headers are set.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          E2E_HOTFIX: '1'
+          E2E_SPEC: ${{ github.event.inputs.spec }}
+          E2E_HOTFIX: ${{ github.event.inputs.spec == 'e2e/hotfix-24.spec.ts' && '1' || '' }}
         run: |
-          npm run test:e2e -- e2e/hotfix-24.spec.ts e2e/public-pages.spec.ts e2e/contact-privacy.spec.ts
+          if [ -n "$E2E_SPEC" ]; then
+            case "$E2E_SPEC" in
+              e2e/*.spec.ts)
+                npm run test:e2e -- "$E2E_SPEC"
+                ;;
+              *)
+                echo "Refusing spec filter"
+                exit 1
+                ;;
+            esac
+          else
+            npm run test:e2e
+          fi
 
       - name: Upload perf baseline
         if: always()
