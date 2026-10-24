@@ -39,35 +39,8 @@ export function parsePath(path: string) {
   if (parts[0] === 'students' && parts[2] === 'thankYouCards') {
     return { table: 'thank_you_cards', id: parts[3], studentId: parts[1], keyField: 'id' };
   }
-  if (parts[0] === 'students' && parts[2] === 'signedIps') {
-    return { table: 'signed_ips', ipAddress: parts[3], studentId: parts[1], keyField: 'studentId' };
-  }
   
   return { table: parts[0] || '', id: parts[1], keyField: 'id' };
-}
-
-export async function getDoc(ref: MockRef) {
-  const parsed = parsePath(ref.path);
-  
-  let q = supabase.from(parsed.table).select('*');
-  
-  if (parsed.table === 'signed_ips') {
-    q = q.eq('studentId', parsed.studentId).eq('ipAddress', parsed.ipAddress);
-  } else {
-    q = q.eq(parsed.keyField || 'id', parsed.id);
-  }
-  
-  const { data, error } = await q.maybeSingle();
-  if (error) {
-    console.error("Error in getDoc:", error);
-    throw error;
-  }
-  
-  return {
-    exists: () => !!data,
-    data: () => data,
-    id: parsed.id || '',
-  };
 }
 
 export function useDoc<T = any>(

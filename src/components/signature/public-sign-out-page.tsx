@@ -77,7 +77,7 @@ export default function PublicSignOutPage() {
     const checkIp = async () => {
       setIsCheckingIp(true);
       try {
-        // signed_ips is server-only; the API checks the caller's IP for us.
+        // The API checks the caller's IP. The browser never queries signing history.
         const res = await fetch(`/api/signatures?studentId=${encodeURIComponent(studentId)}`);
         if (res.ok) {
           const { alreadySigned } = await res.json();

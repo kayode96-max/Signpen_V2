@@ -11,8 +11,8 @@
 --   6. realtime streamed students rows incl. email  -> students removed from supabase_realtime.
 --
 -- App prerequisite: deploy with the app from this PR, and set SUPABASE_SERVICE_ROLE_KEY
--- (server-only, production project's key) in Vercel Production first. POST /api/signatures
--- calls record_signed_ip with it and returns 503 without it.
+-- (server-only, production project's key) in Vercel Production first. GET and POST
+-- /api/signatures call has_signed_ip and record_signed_ip with it and return 503 without it.
 -- Rollback (grants/policies only, IPs stay hashed): supabase/rollback/20261024050000_security_hotfix_rollback.sql
 
 begin;
@@ -151,6 +151,8 @@ end
 $$;
 
 -- Has this IP already signed this board? (boolean only; never returns hashes)
+-- Server-only: GET /api/signatures calls it with the service role key, so the
+-- browser cannot probe guessed IPs.
 create or replace function public.has_signed_ip(p_student_id uuid, p_ip text)
 returns boolean
 language sql
@@ -163,8 +165,8 @@ as $$
     where "studentId" = p_student_id and "ipHash" = private.hash_ip(p_ip)
   );
 $$;
-revoke all on function public.has_signed_ip(uuid, text) from public;
-grant execute on function public.has_signed_ip(uuid, text) to anon, authenticated;
+revoke all on function public.has_signed_ip(uuid, text) from public, anon, authenticated;
+grant execute on function public.has_signed_ip(uuid, text) to service_role;
 
 -- Record a signing IP (hashed). Returns true if newly recorded.
 create or replace function public.record_signed_ip(p_student_id uuid, p_ip text)

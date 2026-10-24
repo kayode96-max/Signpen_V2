@@ -8,10 +8,11 @@
 --   * It NEVER un-hashes IPs and never restores the plaintext "ipAddress" column.
 --     signed_ips stays hashed ("ipHash"), with no grants and no policies for
 --     anon/authenticated (server-only). Plaintext IPs are gone and must stay gone.
---   * It keeps private.hash_ip, private.app_config (salt), has_signed_ip,
---     record_signed_ip (service_role only), get_student_public and the
---     feedback_public view. Dropping them is NOT safe: the current app (this PR)
---     calls them, and signed_ips cannot be used without them.
+--   * It keeps private.hash_ip, private.app_config (salt), has_signed_ip and
+--     record_signed_ip (both service_role only — execute is NOT re-granted to
+--     anon or authenticated), get_student_public and the feedback_public view.
+--     Dropping them is NOT safe: the current app (this PR) calls them from the
+--     server, and signed_ips cannot be used without them.
 --   * It does not restore TRUNCATE, TRIGGER or REFERENCES; no app code needs them.
 --
 -- Consequence: the pre-hotfix app (main before this PR) still cannot sign after a
@@ -40,6 +41,9 @@ create policy "Allow public read access" on public.feedback
   for select using (true);
 
 -- 4. signed_ips: nothing restored (stays hashed and server-only).
+--    has_signed_ip stays service_role only. Do not grant it to anon or authenticated.
+revoke all on function public.has_signed_ip(uuid, text) from public, anon, authenticated;
+grant execute on function public.has_signed_ip(uuid, text) to service_role;
 
 -- 5. Storage bucket 'signpen': original write policies and no limits.
 drop policy if exists signpen_owner_insert on storage.objects;

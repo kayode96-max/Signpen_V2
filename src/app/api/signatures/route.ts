@@ -22,24 +22,23 @@ function getClientIp(req: NextRequest): string {
 }
 
 // GET /api/signatures?studentId=... -> { alreadySigned: boolean } for the caller's IP.
-// signed_ips is not readable from the browser; IPs are stored as salted hashes.
+// has_signed_ip is service_role only. The browser calls this route, never the RPC.
 export async function GET(req: NextRequest) {
   const studentId = req.nextUrl.searchParams.get('studentId');
   if (!studentId) {
     return NextResponse.json({ error: 'studentId is required.' }, { status: 400 });
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseAnonKey) {
+  const admin = getSupabaseAdmin();
+  if (!admin) {
+    console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing the already-signed check.');
     return NextResponse.json(
-      { error: 'Supabase credentials are not configured on the server.' },
+      { error: 'Signing is temporarily unavailable.' },
       { status: 503 }
     );
   }
 
-  const client = createClient(supabaseUrl, supabaseAnonKey);
-  const { data, error } = await client.rpc('has_signed_ip', {
+  const { data, error } = await admin.rpc('has_signed_ip', {
     p_student_id: studentId,
     p_ip: getClientIp(req),
   });
@@ -118,8 +117,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // record_signed_ip is executable by service_role only. Fail closed before any write
-    // if the server key is missing, so a signature is never saved without its IP record.
+    // has_signed_ip and record_signed_ip are executable by service_role only.
+    // Fail closed before any write if the server key is missing, so a signature
+    // is never saved without its IP record.
     const admin = getSupabaseAdmin();
     if (!admin) {
       console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing to record a signature.');
@@ -132,8 +132,8 @@ export async function POST(req: NextRequest) {
     // 2. Extract visitor IP
     const ip = getClientIp(req);
 
-    // 3. Check signed_ips (server-only, hashed) for duplicates
-    const { data: alreadySigned, error: checkError } = await userClient.rpc('has_signed_ip', {
+    // 3. Check signing history (server-only, hashed) for duplicates
+    const { data: alreadySigned, error: checkError } = await admin.rpc('has_signed_ip', {
       p_student_id: body.studentId,
       p_ip: ip,
     });
