@@ -1,204 +1,110 @@
+import { revalidateTag } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { z } from 'zod';
+import { boardCacheTag } from '@/lib/cache/board';
+import { getClientIp } from '@/lib/security/client-ip';
+import { createSignature, type SignatureWriteArgs, type TurnstileCheck } from '@/lib/server/signatures';
+import { requireRequestUser } from '@/lib/server/session';
+import { createServiceClient, MissingServerConfigError } from '@/lib/server/supabase';
+import { verifyTurnstileToken } from '@/lib/server/turnstile';
 
-// Per-caller (per IP). Never statically generated, ISR-cached, or shared via s-maxage.
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store' };
+const studentIdSchema = z.string().uuid();
 
-function getJson(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: PRIVATE_NO_STORE });
-}
-
-type SignatureCreateRequest = {
-  studentId?: string;
-  signatureImageUrl?: string;
-  signatoryName?: string;
-  signatoryNote?: string;
-  position?: {
-    x?: number;
-    y?: number;
-  };
-};
-
-function getClientIp(req: NextRequest): string {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-    req.headers.get('x-real-ip') ||
-    '127.0.0.1'
-  );
-}
-
-// GET /api/signatures?studentId=... -> { alreadySigned: boolean } for the caller's IP.
-// has_signed_ip is service_role only. The browser calls this route, never the RPC.
-// Every status (200, 4xx, 5xx) is private and uncached: the answer depends on the caller IP.
+/**
+ * GET /api/signatures?studentId=... -> { alreadySigned } for the caller's session.
+ * The rule is one signature per device session per board (signature_signers),
+ * not one per IP, so people on shared Wi-Fi can each sign. Without a session
+ * header the answer is false: a visitor without a session has not signed.
+ */
 export async function GET(req: NextRequest) {
-  const studentId = req.nextUrl.searchParams.get('studentId');
-  if (!studentId) {
-    return getJson({ error: 'studentId is required.' }, 400);
+  const parsed = studentIdSchema.safeParse(req.nextUrl.searchParams.get('studentId'));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'studentId must be a UUID.' }, { status: 400 });
+  }
+  if (!(req.headers.get('authorization') ?? '').startsWith('Bearer ')) {
+    return NextResponse.json({ alreadySigned: false });
   }
 
-  const admin = getSupabaseAdmin();
-  if (!admin) {
-    console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing the already-signed check.');
-    return getJson({ error: 'Signing is temporarily unavailable.' }, 503);
-  }
-
-  const { data, error } = await admin.rpc('has_signed_ip', {
-    p_student_id: studentId,
-    p_ip: getClientIp(req),
-  });
-
-  if (error) {
-    console.error('has_signed_ip failed:', error);
-    return getJson({ error: 'Failed to verify signing history.' }, 500);
-  }
-
-  return getJson({ alreadySigned: data === true });
-}
-
-export async function POST(req: NextRequest) {
-  let body: SignatureCreateRequest;
+  const session = await requireRequestUser(req);
+  if (!session.ok) return session.response;
 
   try {
-    body = await req.json();
+    const service = createServiceClient();
+    const { data, error } = await service.rpc('signer_has_signed', {
+      p_student_id: parsed.data,
+      p_signer_user_id: session.user.id,
+    });
+    if (error || typeof data !== 'boolean') {
+      console.error('signer_has_signed failed:', error?.code ?? 'no boolean');
+      return NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 });
+    }
+    return NextResponse.json({ alreadySigned: data });
+  } catch (err) {
+    if (err instanceof MissingServerConfigError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    console.error('Unexpected error in signatures GET handler.');
+    return NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 });
+  }
+}
+
+/**
+ * Anonymous sessions may sign. Inserts run as the service role through
+ * public.insert_signature. That function allows 100 signatures per hashed IP
+ * per board per rolling hour and then raises challenge_required. A verified
+ * Turnstile token is the only way past that cap. There is no cross-board cap.
+ * The raw IP is passed to insert_signature, which stores only a salted SHA-256
+ * (private.hash_ip). The salt never leaves the database.
+ */
+export async function POST(req: NextRequest) {
+  let raw: unknown;
+  try {
+    raw = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
 
-  if (!body.studentId || !body.signatureImageUrl || !body.signatoryName || !body.signatoryNote) {
-    return NextResponse.json(
-      { error: 'Missing required signature fields.' },
-      { status: 400 }
-    );
-  }
-
-  if (
-    typeof body.position?.x !== 'number' ||
-    typeof body.position?.y !== 'number'
-  ) {
-    return NextResponse.json(
-      { error: 'position.x and position.y must be numbers.' },
-      { status: 400 }
-    );
-  }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return NextResponse.json(
-      { error: 'Supabase credentials are not configured on the server.' },
-      { status: 503 }
-    );
-  }
-
-  const authHeader = req.headers.get('authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return NextResponse.json(
-      { error: 'Unauthorized: Session authorization header is missing.' },
-      { status: 401 }
-    );
-  }
-
-  const token = authHeader.replace('Bearer ', '');
+  const session = await requireRequestUser(req);
+  if (!session.ok) return session.response;
 
   try {
-    // Create user-authenticated client using the client bearer token
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    const service = createServiceClient();
+    const result = await createSignature(raw, {
+      userId: session.user.id,
+      ip: getClientIp(req.headers),
+      verifyTurnstile: (token) => checkTurnstile(token, getClientIp(req.headers)),
+      write: async (args: SignatureWriteArgs) => {
+        const { data, error } = await service.rpc('insert_signature', args);
+        if (error) return { ok: false as const, code: error.code, message: error.message };
+        if (typeof data !== 'string' || data.length === 0) {
+          return { ok: false as const, message: 'insert_signature returned no id' };
+        }
+        return { ok: true as const, id: data };
       },
     });
-
-    // 1. Verify token & session validity
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-    if (authError || !user) {
-      console.error('Supabase session verification failed:', authError);
-      return NextResponse.json(
-        { error: 'Unauthorized: Could not verify your session.' },
-        { status: 401 }
-      );
+    if (result.status === 201 && result.boardId) {
+      revalidateTag(boardCacheTag(result.boardId));
     }
-
-    // has_signed_ip and record_signed_ip are executable by service_role only.
-    // Fail closed before any write if the server key is missing, so a signature
-    // is never saved without its IP record.
-    const admin = getSupabaseAdmin();
-    if (!admin) {
-      console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing to record a signature.');
-      return NextResponse.json(
-        { error: 'Signing is temporarily unavailable.' },
-        { status: 503 }
-      );
+    return NextResponse.json(result.body, { status: result.status });
+  } catch (err) {
+    if (err instanceof MissingServerConfigError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
     }
-
-    // 2. Extract visitor IP
-    const ip = getClientIp(req);
-
-    // 3. Check signing history (server-only, hashed) for duplicates
-    const { data: alreadySigned, error: checkError } = await admin.rpc('has_signed_ip', {
-      p_student_id: body.studentId,
-      p_ip: ip,
-    });
-
-    if (checkError) {
-      console.error('Failed to query signed_ips table:', checkError);
-      return NextResponse.json(
-        { error: 'Failed to verify signing history.' },
-        { status: 500 }
-      );
-    }
-
-    if (alreadySigned === true) {
-      return NextResponse.json(
-        { error: 'You have already signed this board from this IP.' },
-        { status: 409 }
-      );
-    }
-
-    // 4. Save signature in the database
-    const { data: signature, error: sigError } = await userClient
-      .from('signatures')
-      .insert({
-        studentId: body.studentId,
-        signatureImageUrl: body.signatureImageUrl,
-        signatoryName: body.signatoryName,
-        signatoryNote: body.signatoryNote,
-        position: body.position,
-      })
-      .select()
-      .single();
-
-    if (sigError) {
-      console.error('Failed to insert row into signatures table:', sigError);
-      return NextResponse.json(
-        { error: 'Failed to record signature.' },
-        { status: 500 }
-      );
-    }
-
-    // 5. Track client IP in signed_ips to prevent spam
-    //    Service role only: signers cannot record arbitrary IPs to block others.
-    const { error: ipInsertError } = await admin.rpc('record_signed_ip', {
-      p_student_id: body.studentId,
-      p_ip: ip,
-    });
-
-    if (ipInsertError) {
-      // Log error but do not fail the request since signature is already recorded
-      console.warn('Failed to insert row into signed_ips table:', ipInsertError);
-    }
-
-    return NextResponse.json({ signature_id: signature.id }, { status: 201 });
-  } catch (err: any) {
-    console.error('Unexpected error in signatures handler:', err);
+    console.error('Unexpected error in signatures handler.');
     return NextResponse.json(
       { error: 'Internal server error while processing signature.' },
       { status: 500 }
     );
   }
+}
+
+async function checkTurnstile(token: string, ip: string | null): Promise<TurnstileCheck> {
+  const verdict = await verifyTurnstileToken(token, ip);
+  if (verdict.ok) return 'valid';
+  if (verdict.status === 400) return 'invalid';
+  console.error('signature challenge verification failed:', verdict.error);
+  return 'unavailable';
 }
