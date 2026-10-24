@@ -381,8 +381,10 @@ async function drawAndSubmit(page: Page): Promise<string> {
     [0.5, 0.32],
   ];
   const draw = page.getByRole('dialog').filter({ hasText: 'Draw Your Signature' });
+  // The shirt canvas schedules loads. A locator click waits for those
+  // navigations and times out on Pixel 5. A mouse click does not.
   for (const [x, y] of fractions) {
-    await canvas.click({ position: { x: Math.round(box.width * x), y: Math.round(box.height * y) }, force: true });
+    await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
     if (await draw.isVisible().catch(() => false)) break;
     await page.waitForTimeout(500);
   }
@@ -390,9 +392,9 @@ async function drawAndSubmit(page: Page): Promise<string> {
     const spot = await page.getByText('Spot Taken').isVisible().catch(() => false);
     return spot ? 'shirt clicks hit Spot Taken only' : 'draw dialog did not open after shirt clicks';
   }
-  await draw.getByRole('button', { name: 'Text' }).click();
-  await draw.locator('canvas').click({ position: { x: 80, y: 80 }, force: true });
-  await draw.getByRole('button', { name: 'Place on Shirt' }).click();
+  await draw.getByRole('button', { name: 'Text' }).click({ force: true, noWaitAfter: true });
+  await draw.locator('canvas').click({ position: { x: 80, y: 80 }, force: true, noWaitAfter: true });
+  await draw.getByRole('button', { name: 'Place on Shirt' }).click({ force: true, noWaitAfter: true });
   const submit = shirt.getByRole('button', { name: 'Done & Submit' });
   const enabled = await expect(submit)
     .toBeEnabled({ timeout: 10_000 })
