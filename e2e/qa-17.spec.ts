@@ -381,10 +381,26 @@ async function drawAndSubmit(page: Page): Promise<string> {
     [0.5, 0.32],
   ];
   const draw = page.getByRole('dialog').filter({ hasText: 'Draw Your Signature' });
-  // The shirt canvas schedules loads. A locator click waits for those
-  // navigations and times out on Pixel 5. A mouse click does not.
-  for (const [x, y] of fractions) {
-    await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+  // A locator click waits for loads the shirt canvas schedules. On a touch
+  // phone, a mouse click is also treated as a drag, so the shirt ignores it.
+  // Dispatch the click at one point so the raycast runs without that drag.
+  const touch = await page.evaluate(() => navigator.maxTouchPoints > 0);
+  for (const [fx, fy] of fractions) {
+    const x = box.x + box.width * fx;
+    const y = box.y + box.height * fy;
+    if (touch) {
+      await page.evaluate(({ x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        const target = hit?.closest('canvas')?.parentElement ?? hit;
+        if (!target) return;
+        const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window };
+        target.dispatchEvent(new MouseEvent('mousedown', opts));
+        target.dispatchEvent(new MouseEvent('mouseup', opts));
+        target.dispatchEvent(new MouseEvent('click', opts));
+      }, { x, y });
+    } else {
+      await page.mouse.click(x, y);
+    }
     if (await draw.isVisible().catch(() => false)) break;
     await page.waitForTimeout(500);
   }
