@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 type SignatureCreateRequest = {
   studentId?: string;
@@ -117,6 +118,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // record_signed_ip is executable by service_role only. Fail closed before any write
+    // if the server key is missing, so a signature is never saved without its IP record.
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY is not configured; refusing to record a signature.');
+      return NextResponse.json(
+        { error: 'Signing is temporarily unavailable.' },
+        { status: 503 }
+      );
+    }
+
     // 2. Extract visitor IP
     const ip = getClientIp(req);
 
@@ -163,7 +175,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Track client IP in signed_ips to prevent spam
-    const { error: ipInsertError } = await userClient.rpc('record_signed_ip', {
+    //    Service role only: signers cannot record arbitrary IPs to block others.
+    const { error: ipInsertError } = await admin.rpc('record_signed_ip', {
       p_student_id: body.studentId,
       p_ip: ip,
     });

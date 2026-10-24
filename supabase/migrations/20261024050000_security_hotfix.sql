@@ -9,6 +9,11 @@
 --   4. signed_ips: public read of plaintext IPs     -> server-only via RPCs, IPs replaced by salted SHA-256.
 --   5. storage bucket 'signpen': public insert/update -> owner-folder writes only, size + MIME limits.
 --   6. realtime streamed students rows incl. email  -> students removed from supabase_realtime.
+--
+-- App prerequisite: deploy with the app from this PR, and set SUPABASE_SERVICE_ROLE_KEY
+-- (server-only, production project's key) in Vercel Production first. POST /api/signatures
+-- calls record_signed_ip with it and returns 503 without it.
+-- Rollback (grants/policies only, IPs stay hashed): supabase/rollback/20261024050000_security_hotfix_rollback.sql
 
 begin;
 
@@ -72,25 +77,29 @@ drop policy if exists "Allow public read access for students" on public.students
 -- Kept as is: "Allow owner write access for students" FOR ALL USING (auth.uid() = id)
 -- (covers the owner's own select/insert/update/delete).
 
-create or replace function public.get_student_public(p_id uuid)
+-- Signature and columns match PR #15 (0002_rls.sql) and what PR #17 reads
+-- (src/lib/server/public-student.ts: rpc("get_student_public", { p_id })).
+-- Dropped first so a re-run can change the return columns (CREATE OR REPLACE cannot).
+drop function if exists public.get_student_public(uuid);
+create function public.get_student_public(p_id uuid)
 returns table (
   id uuid,
   name text,
   "profilePhotoUrl" text,
   "pageSettings" jsonb,
-  "popupMessageConfig" jsonb,
-  "createdAt" timestamptz
+  "popupMessageConfig" jsonb
 )
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select s.id, s.name, s."profilePhotoUrl", s."pageSettings", s."popupMessageConfig", s."createdAt"
+  select s.id, s.name, s."profilePhotoUrl", s."pageSettings", s."popupMessageConfig"
   from public.students s
-  where s.id = p_id;
+  where s.id = p_id
+    and p_id is not null;
 $$;
-revoke all on function public.get_student_public(uuid) from public;
+revoke all on function public.get_student_public(uuid) from public, anon, authenticated;
 grant execute on function public.get_student_public(uuid) to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -178,8 +187,10 @@ begin
   return v_rows > 0;
 end;
 $$;
-revoke all on function public.record_signed_ip(uuid, text) from public, anon;
-grant execute on function public.record_signed_ip(uuid, text) to authenticated;
+-- Server-only: the signing route calls it with the service role key, so signed-in
+-- users cannot record made-up IPs to block other signers.
+revoke all on function public.record_signed_ip(uuid, text) from public, anon, authenticated;
+grant execute on function public.record_signed_ip(uuid, text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 5. Storage bucket 'signpen': owner-folder writes, limits
