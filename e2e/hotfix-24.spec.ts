@@ -18,10 +18,17 @@ const SPOOF_IP = '203.0.113.88';
 
 type CaseResult = {
   name: string;
-  ok: boolean;
+  status: 'pass' | 'fail' | 'blocked';
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
   evidence: string;
 };
+
+type RecordCase = (
+  name: string,
+  ok: boolean | 'blocked',
+  severity: CaseResult['severity'],
+  evidence: string,
+) => void;
 
 type Session = {
   access_token: string;
@@ -44,6 +51,14 @@ function snippet(status: number, body: string): string {
   return `HTTP ${status} ${redact(body).replace(/\s+/g, ' ')}`;
 }
 
+function anonymousDisabled(error: string): boolean {
+  return /anonymous_provider_disabled|anonymous sign-ins are disabled/i.test(error);
+}
+
+function serviceKeyMissing(status: number, body: string): boolean {
+  return status === 503 && /temporarily unavailable|service role|not configured|SUPABASE_SERVICE_ROLE_KEY/i.test(body);
+}
+
 test.describe('PR 24 security hotfix', () => {
   test.skip(
     process.env.E2E_HOTFIX !== '1',
@@ -53,14 +68,10 @@ test.describe('PR 24 security hotfix', () => {
   test('preview lockdown', async ({ page, request }) => {
     test.setTimeout(240_000);
     const results: CaseResult[] = [];
-    const record = (
-      name: string,
-      ok: boolean,
-      severity: CaseResult['severity'],
-      evidence: string,
-    ) => {
-      results.push({ name, ok, severity: ok ? 'none' : severity, evidence });
-      console.log(`[hotfix] ${ok ? 'PASS' : 'FAIL'} ${name} :: ${evidence}`);
+    const record: RecordCase = (name, ok, severity, evidence) => {
+      const status = ok === 'blocked' ? 'blocked' : ok ? 'pass' : 'fail';
+      results.push({ name, status, severity: status === 'pass' ? 'none' : severity, evidence });
+      console.log(`[hotfix] ${status.toUpperCase()} ${name} :: ${evidence}`);
     };
 
     const baseURL = process.env.BASE_URL || 'http://localhost:3000';
@@ -126,7 +137,7 @@ test.describe('PR 24 security hotfix', () => {
       } else {
         record(
           '1 anon reads (anonymous session)',
-          false,
+          anonymousDisabled(anonymousError) ? 'blocked' : false,
           'low',
           anonymousError || 'anonymous sign-in returned no session',
         );
@@ -148,7 +159,7 @@ test.describe('PR 24 security hotfix', () => {
       } else {
         record(
           '7 RPCs (anonymous session)',
-          false,
+          anonymousDisabled(anonymousError) ? 'blocked' : false,
           'low',
           `anonymous session unavailable (${anonymousError || 'no token'}), so this half was not called`,
         );
@@ -188,17 +199,27 @@ test.describe('PR 24 security hotfix', () => {
 
       if (!studentReady) {
         record(
-          '2 board, sign, already-signed',
+          '2 board',
           false,
           'high',
           ownerBlocker || 'no preview board could be created for the throwaway owner',
         );
-        record(
-          '8 GET /api/signatures IP',
-          false,
-          'medium',
-          'skipped the probe comparison because no board was signed',
-        );
+        if (anonymousDisabled(anonymousError)) {
+          record('2 anonymous sign', 'blocked', 'low', anonymousError);
+          record('2 already-signed', 'blocked', 'low', `not attempted; ${anonymousError}`);
+          record(
+            '2 server IP record',
+            'blocked',
+            'low',
+            `not reached, so the service key was not observed; ${anonymousError}`,
+          );
+        } else {
+          const evidence = anonymousError || ownerBlocker || 'no anonymous session';
+          record('2 anonymous sign', false, 'high', evidence);
+          record('2 already-signed', false, 'high', `not attempted; ${evidence}`);
+          record('2 server IP record', false, 'high', `not attempted; ${evidence}`);
+        }
+        await recordSignatureProbe(request, '00000000-0000-4000-8000-000000000024', record);
       } else {
         await caseBoardAndSign(
           page,
@@ -234,8 +255,10 @@ test.describe('PR 24 security hotfix', () => {
       await anon.dispose();
     }
 
-    const failed = results.filter((item) => !item.ok);
-    console.log(`[hotfix] ${results.length - failed.length} passed, ${failed.length} failed`);
+    const failed = results.filter((item) => item.status === 'fail');
+    const blocked = results.filter((item) => item.status === 'blocked');
+    const passed = results.filter((item) => item.status === 'pass');
+    console.log(`[hotfix] ${passed.length} passed, ${failed.length} failed, ${blocked.length} blocked`);
     expect(failed, failed.map((item) => `${item.name}: ${item.evidence}`).join('\n')).toEqual([]);
   });
 });
@@ -505,44 +528,74 @@ async function caseBoardAndSign(
   studentId: string,
   anonymous: Session | null,
   anonymousError: string,
-  record: (name: string, ok: boolean, severity: CaseResult['severity'], evidence: string) => void,
+  record: RecordCase,
 ): Promise<void> {
   const errors = collectConsole(page);
   const response = await page.goto(new URL(`/${studentId}`, baseURL).href, { waitUntil: 'domcontentloaded' });
   const status = response?.status() ?? 0;
   const wall = await isLoginWall(page, status);
-  const heading = await page.getByText("Sign-Off", { exact: false }).first().isVisible().catch(() => false);
-  const before = await signatureProbe(request, studentId);
-  let signEvidence = anonymousError || 'no anonymous session';
-  let signed = false;
-  let secondRefused = false;
-  if (anonymous?.access_token) {
-    const first = await postSignature(request, studentId, anonymous.access_token);
-    signEvidence = `first ${snippet(first.status, first.body)}`;
-    signed = first.status === 201;
-    const second = await postSignature(request, studentId, anonymous.access_token);
-    signEvidence += `; second ${snippet(second.status, second.body)}`;
-    secondRefused = second.status === 409 || /already signed/i.test(second.body);
-  }
-  const after = await signatureProbe(request, studentId);
-  const boardOk = !wall && status === 200 && heading;
-  const signOk = signed && secondRefused;
+  const heading = await page.getByText('Sign-Off', { exact: false }).first().isVisible().catch(() => false);
   record(
-    '2 board, sign, already-signed',
-    boardOk && signOk,
+    '2 board',
+    !wall && status === 200 && heading,
     wall ? 'critical' : 'high',
-    `board HTTP ${status} heading=${heading} loginWall=${wall}; ${signEvidence}; console=${errors.join('; ') || 'none'}`,
+    `HTTP ${status} heading=${heading} loginWall=${wall} console=${errors.join('; ') || 'none'}`,
   );
 
-  const leaked =
-    before.ips.length > 0 || after.ips.length > 0 || before.bodyHasIp || after.bodyHasIp;
-  const queryProbes = before.queryDiffers || after.queryDiffers;
-  const headerProbes = signed && after.spoofDiffers;
+  if (!anonymous?.access_token) {
+    const evidence = anonymousError || 'no anonymous session';
+    const blocked = anonymousDisabled(evidence);
+    record('2 anonymous sign', blocked ? 'blocked' : false, blocked ? 'low' : 'high', evidence);
+    record('2 already-signed', blocked ? 'blocked' : false, blocked ? 'low' : 'high', `not attempted; ${evidence}`);
+    record(
+      '2 server IP record',
+      blocked ? 'blocked' : false,
+      blocked ? 'low' : 'high',
+      blocked ? `not reached, so the service key was not observed; ${evidence}` : evidence,
+    );
+    await recordSignatureProbe(request, studentId, record);
+    return;
+  }
+
+  const first = await postSignature(request, studentId, anonymous.access_token);
+  const firstEvidence = snippet(first.status, first.body);
+  if (serviceKeyMissing(first.status, first.body)) {
+    record('2 anonymous sign', 'blocked', 'low', firstEvidence);
+    record('2 already-signed', 'blocked', 'low', `not attempted; ${firstEvidence}`);
+    record('2 server IP record', 'blocked', 'low', firstEvidence);
+    await recordSignatureProbe(request, studentId, record);
+    return;
+  }
+
+  const second = await postSignature(request, studentId, anonymous.access_token);
+  const secondEvidence = snippet(second.status, second.body);
+  const signed = first.status === 201;
+  const secondRefused = second.status === 409 || /already signed/i.test(second.body);
+  record('2 anonymous sign', signed, 'high', firstEvidence);
+  record('2 already-signed', signed && secondRefused, 'high', `second ${secondEvidence}`);
+  record(
+    '2 server IP record',
+    signed && secondRefused,
+    'high',
+    signed && secondRefused
+      ? `second attempt refused, so the server recorded this visitor; ${secondEvidence}`
+      : `IP record was not confirmed; ${firstEvidence}; ${secondEvidence}`,
+  );
+  await recordSignatureProbe(request, studentId, record);
+}
+
+async function recordSignatureProbe(
+  request: APIRequestContext,
+  studentId: string,
+  record: RecordCase,
+): Promise<void> {
+  const probed = await signatureProbe(request, studentId);
+  const leaked = probed.ips.length > 0 || probed.bodyHasIp;
   record(
     '8 GET /api/signatures IP',
-    !leaked && !queryProbes && !headerProbes && before.status < 500 && after.status < 500,
+    !leaked && !probed.queryDiffers && !probed.spoofDiffers && probed.status < 500,
     leaked ? 'critical' : 'high',
-    `before ${before.evidence}; after ${after.evidence}`,
+    probed.evidence,
   );
 }
 
@@ -558,7 +611,7 @@ async function caseStorage(
     extraHTTPHeaders: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
   });
   const lines: string[] = [];
-  let ok = true;
+  let ownerOk = true;
   try {
     const rejected = await storagePut(
       loggedOut,
@@ -568,11 +621,11 @@ async function caseStorage(
       'image/jpeg',
     );
     lines.push(`logged-out jpeg ${snippet(rejected.status, rejected.body)}`);
-    if (rejected.status < 300) ok = false;
+    record('4 storage logged-out', rejected.status >= 300, 'high', snippet(rejected.status, rejected.body));
 
     if (!owner?.access_token || !ownerId) {
       lines.push(`owner uploads not run (${ownerBlocker || 'no session'})`);
-      ok = false;
+      ownerOk = false;
     } else {
       const authed = await newRequest.newContext({
         extraHTTPHeaders: { apikey: anonKey, Authorization: `Bearer ${owner.access_token}` },
@@ -590,7 +643,7 @@ async function caseStorage(
           'image/jpeg',
         );
         lines.push(`over-5mb ${snippet(over.status, over.body)}`);
-        if (over.status < 300) ok = false;
+        if (over.status < 300) ownerOk = false;
 
         const txt = await storagePut(
           authed,
@@ -616,7 +669,7 @@ async function caseStorage(
         lines.push(`txt ${snippet(txt.status, txt.body)}`);
         lines.push(`svg ${snippet(svg.status, svg.body)}`);
         lines.push(`exe ${snippet(exe.status, exe.body)}`);
-        if (txt.status < 300 || svg.status < 300 || exe.status < 300) ok = false;
+        if (txt.status < 300 || svg.status < 300 || exe.status < 300) ownerOk = false;
 
         const jpeg = await storagePut(
           authed,
@@ -634,7 +687,7 @@ async function caseStorage(
         );
         lines.push(`owner jpeg ${snippet(jpeg.status, jpeg.body)}`);
         lines.push(`owner png ${snippet(png.status, png.body)}`);
-        if (jpeg.status >= 300 || png.status >= 300) ok = false;
+        if (jpeg.status >= 300 || png.status >= 300) ownerOk = false;
       } finally {
         await authed.dispose();
       }
@@ -642,7 +695,7 @@ async function caseStorage(
   } finally {
     await loggedOut.dispose();
   }
-  record('4 storage', ok, 'high', lines.join(' | '));
+  record('4 storage owner', ownerOk, 'high', lines.join(' | '));
 }
 
 async function caseDashboard(
