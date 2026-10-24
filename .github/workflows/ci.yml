@@ -34,7 +34,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -46,35 +46,20 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Unit tests on every pull request. Playwright against a Vercel preview
+      # stays in QA's e2e workflow; this job does not request a preview URL.
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
 
-  # test:
-  #   # TODO(QA): Playwright smoke suite against this PR's Vercel preview.
-  #   # Leave commented out until the preview URL is available to the job.
-  #   # Needs the preview URL (Vercel deployment for this pull request) before it can run.
-  #   name: Playwright smoke
-  #   needs: ci
-  #   if: github.event_name == 'pull_request'
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 15
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  #       with:
-  #         persist-credentials: false
-  #
-  #     - name: Set up Node.js
-  #       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-  #       with:
-  #         node-version: 22
-  #         cache: npm
-  #
-  #     - name: Install dependencies
-  #       run: npm ci --no-audit --no-fund
-  #
-  #     - name: Run Playwright smoke tests
-  #       env:
-  #         # TODO: set PLAYWRIGHT_BASE_URL to this PR's Vercel preview URL.
-  #         PLAYWRIGHT_BASE_URL: ""
-  #       run: npx playwright test
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Report-only until landing assets are under budget (PR #18).
+      # One-line change to make this step blocking: ENFORCE_PERF_BUDGETS: "1"
+      - name: Performance budget
+        env:
+          ENFORCE_PERF_BUDGETS: "0"
+        run: npm run perf:budget
