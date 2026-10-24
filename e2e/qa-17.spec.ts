@@ -202,10 +202,10 @@ test('6 UI signing on the board', async ({ page }, testInfo) => {
   await dismissInstructions(page);
   await page.getByRole('button', { name: 'Leave Your Signature' }).click();
   const already = page.getByText("You've already signed this shirt.");
-  const form = page.getByRole('dialog').filter({ hasText: 'Before you sign' });
+  const again = page.getByRole('dialog').filter({ hasText: 'Before you sign' });
   await Promise.race([
     already.waitFor({ state: 'visible', timeout: 10_000 }),
-    form.waitFor({ state: 'visible', timeout: 10_000 }),
+    again.waitFor({ state: 'visible', timeout: 10_000 }),
   ]).catch(() => undefined);
   const alreadyVisible = await already.isVisible().catch(() => false);
   const evidence = [
