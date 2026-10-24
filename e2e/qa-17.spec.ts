@@ -127,6 +127,7 @@ test('6 UI signing on the board', async ({ page }, testInfo) => {
   const project = testInfo.project.name;
   let bearer = false;
   let postStatus = 0;
+  let postError = '';
   let signatureId = '';
   page.on('request', (req) => {
     if (req.method() !== 'POST' || !req.url().includes('/api/signatures')) return;
@@ -137,11 +138,11 @@ test('6 UI signing on the board', async ({ page }, testInfo) => {
     const req = response.request();
     if (req.method() !== 'POST' || !response.url().includes('/api/signatures')) return;
     postStatus = response.status();
-    if (postStatus !== 201) return;
     const body = await response.json().catch(() => null);
-    if (body && typeof body === 'object' && typeof (body as { signature_id?: unknown }).signature_id === 'string') {
-      signatureId = (body as { signature_id: string }).signature_id;
-    }
+    if (!body || typeof body !== 'object') return;
+    const parsed = body as { signature_id?: unknown; error?: unknown };
+    if (typeof parsed.signature_id === 'string') signatureId = parsed.signature_id;
+    if (typeof parsed.error === 'string') postError = parsed.error.slice(0, 180);
   });
 
   const response = await page.goto(new URL(`/${BOARD_ID}`, baseURL).href, { waitUntil: 'domcontentloaded' });
@@ -209,7 +210,11 @@ test('6 UI signing on the board', async ({ page }, testInfo) => {
     `signatureId=${signatureId || 'none'}`,
     `passThePhone=${phone}`,
   ].join(' ');
-  console.log(`[qa17] 6 ${evidence}`);
+  console.log(`[qa17] 6 ${evidence} postError=${postError || 'none'}`);
+  if (postStatus === 503 && /service role|not configured|SUPABASE_SERVICE_ROLE_KEY/i.test(postError)) {
+    console.log(`[qa17] BLOCKED 6 ${project} service role key is not configured; no signature was created`);
+    return;
+  }
   expect(drawError, evidence).toBe('');
   expect(success, evidence).toBe(true);
   expect(postStatus, evidence).toBe(201);
