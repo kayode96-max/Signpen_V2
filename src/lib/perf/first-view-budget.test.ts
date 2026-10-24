@@ -44,6 +44,25 @@ describe('summarizeFirstView', () => {
     expect(budgetFailures(summary).some((line) => line.includes('gated first-view bytes'))).toBe(true);
   });
 
+  it('flags signpen.png and interactive.svg on the current landing page', () => {
+    const summary = summarizeFirstView([
+      { url: 'http://127.0.0.1:3210/images/interactive.svg', bytes: 2_900_000 },
+      { url: 'http://127.0.0.1:3210/images/signpen.png', bytes: 1_100_000 },
+      { url: 'http://127.0.0.1:3210/images/vid1.mp4', bytes: 2_500_000 },
+    ]);
+    const failures = budgetFailures(summary);
+    expect(summary.gatedFirstViewBytes).toBe(4_000_000);
+    expect(summary.gatedFirstViewBytes).toBeGreaterThan(FIRST_VIEW_BYTE_BUDGET);
+    expect(failures.some((line) => line.includes('gated first-view bytes'))).toBe(true);
+    expect(failures.some((line) => line.includes('interactive.svg'))).toBe(true);
+    expect(failures.some((line) => line.includes('signpen.png'))).toBe(true);
+    expect(failures.some((line) => line.includes('vid1.mp4'))).toBe(false);
+    expect(summary.oversizedGatedRequests.map((request) => request.url)).toEqual([
+      'http://127.0.0.1:3210/images/interactive.svg',
+      'http://127.0.0.1:3210/images/signpen.png',
+    ]);
+  });
+
   it('fails when one gated request exceeds 300 KB and ignores a larger lazy file', () => {
     const summary = summarizeFirstView([
       { url: 'http://127.0.0.1:3210/images/interactive.svg', bytes: FIRST_VIEW_REQUEST_BYTE_BUDGET + 1 },

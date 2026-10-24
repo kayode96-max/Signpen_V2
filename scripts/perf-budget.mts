@@ -5,8 +5,11 @@
  * browser accepts it). No Vercel, no Supabase credentials, no repository secrets.
  *
  * Requires a production build (`.next`) from `npm run build`.
- * Exits 0 when report-only. Exits 1 when ENFORCE_PERF_BUDGETS=1 and the
- * landing page misses the budget, or when the page cannot be measured.
+ * The gated set is every non-lazy request initiated before first contentful
+ * paint. The script waits for those transfers to finish, then counts each
+ * one's full encoded size. Exits 0 when report-only. Exits 1 when
+ * ENFORCE_PERF_BUDGETS=1 and the landing page misses the budget, or when
+ * the page cannot be measured.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -17,6 +20,7 @@ import {
   budgetFailures,
   budgetsAreEnforced,
   formatBudgetReport,
+  isLazyFirstViewAsset,
   summarizeFirstView,
   type ByteEntry,
 } from '../src/lib/perf/first-view-budget.ts';
@@ -86,22 +90,30 @@ async function main(): Promise<void> {
       throw new Error('First contentful paint timestamp was missing.');
     }
     const fcpCdp = performanceMsToCdp(anchor, timing.timeOrigin, timing.fcpMs);
-    const entries = entriesAtFirstPaint(tracked, fcpCdp);
-    const pending = [...tracked.values()]
-      .filter((meta) => meta.startedAt <= fcpCdp)
-      .filter((meta) => !entries.some((entry) => entry.url === meta.url))
+    const settled = await waitForInitiatedTransfers(tracked, fcpCdp);
+    const entries = fullSizeOfInitiated(tracked, fcpCdp);
+    const unfinished = initiated(tracked, fcpCdp)
+      .filter((meta) => meta.finishedAt == null && !isLazyFirstViewAsset(meta.url))
+      .map((meta) => meta.url)
+      .sort();
+    const lazyInFlight = initiated(tracked, fcpCdp)
+      .filter((meta) => meta.finishedAt == null && isLazyFirstViewAsset(meta.url))
       .map((meta) => meta.url)
       .sort();
     const summary = summarizeFirstView(entries);
     const failures = budgetFailures(summary);
+    const note = [cpuNote, settled ? undefined : 'Some gated requests were still in flight at the wait cap.']
+      .filter((line): line is string => Boolean(line))
+      .join(' ');
     console.log(
       formatBudgetReport({
         enforced,
         summary,
         failures,
         fcpMs: timing.fcpMs,
-        note: cpuNote,
-        pending,
+        note: note || undefined,
+        unfinished,
+        lazyInFlight,
       }),
     );
     if (enforced && failures.length > 0) {
@@ -194,19 +206,53 @@ function wireNetwork(
   });
 }
 
-function entriesAtFirstPaint(tracked: Map<string, Tracked>, fcpCdp: number): ByteEntry[] {
+function initiated(tracked: Map<string, Tracked>, fcpCdp: number): Tracked[] {
+  return [...tracked.values()].filter((meta) => meta.startedAt <= fcpCdp);
+}
+
+/** Full encoded size of requests that started before first paint and finished. */
+function fullSizeOfInitiated(tracked: Map<string, Tracked>, fcpCdp: number): ByteEntry[] {
   const entries: ByteEntry[] = [];
-  for (const meta of tracked.values()) {
-    if (meta.startedAt > fcpCdp) continue;
-    const doneBeforePaint = meta.finishedAt != null && meta.finishedAt <= fcpCdp;
-    if (doneBeforePaint) {
-      entries.push({ url: meta.url, bytes: meta.encodedBytes ?? 0 });
+  for (const meta of initiated(tracked, fcpCdp)) {
+    if (meta.finishedAt == null) {
+      if (isLazyFirstViewAsset(meta.url)) continue;
+      const partial = meta.chunks.reduce((total, chunk) => total + chunk.bytes, 0);
+      if (partial > 0) entries.push({ url: meta.url, bytes: partial });
       continue;
     }
-    const partial = meta.chunks.reduce((total, chunk) => (chunk.at <= fcpCdp ? total + chunk.bytes : total), 0);
-    if (partial > 0) entries.push({ url: meta.url, bytes: partial });
+    entries.push({ url: meta.url, bytes: meta.encodedBytes ?? 0 });
   }
   return entries;
+}
+
+/**
+ * Wait until non-lazy requests initiated before first paint have finished.
+ * Lazy assets (hero video, scene.bin, three.js) do not hold the wait open.
+ * Returns false when the cap is hit and a gated request is still in flight.
+ */
+async function waitForInitiatedTransfers(
+  tracked: Map<string, Tracked>,
+  fcpCdp: number,
+  maxMs = 180_000,
+): Promise<boolean> {
+  const deadline = Date.now() + maxMs;
+  let quietSince = 0;
+  while (Date.now() < deadline) {
+    const inflight = initiated(tracked, fcpCdp).filter(
+      (meta) => meta.finishedAt == null && !isLazyFirstViewAsset(meta.url),
+    );
+    if (inflight.length === 0) {
+      if (quietSince === 0) quietSince = Date.now();
+      if (Date.now() - quietSince >= 1_000) return true;
+    } else {
+      quietSince = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const stillOpen = initiated(tracked, fcpCdp).some(
+    (meta) => meta.finishedAt == null && !isLazyFirstViewAsset(meta.url),
+  );
+  return !stillOpen;
 }
 
 function performanceMsToCdp(anchor: ClockAnchor, timeOriginMs: number, perfMs: number): number {

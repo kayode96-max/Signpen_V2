@@ -58,6 +58,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # Report-only until landing assets are under budget (PR #18).
+      # Full transfer size of requests initiated before first paint. Lazy assets excluded.
       # One-line change to make this step blocking: ENFORCE_PERF_BUDGETS: "1"
       - name: Performance budget
         env:

@@ -1,10 +1,10 @@
 /**
  * Landing-page byte budget used by `scripts/perf-budget.mts`.
  *
- * Inclusive `firstViewBytes` matches PR #16's field: bytes on the wire by
- * first contentful paint, including in-flight chunks. The failing totals
- * leave out lazy assets (hero video, scene.bin, three.js chunks). Those stay
- * in the report and cannot fail the gate.
+ * The gated set is every request the browser initiated before first
+ * contentful paint, excluding lazy assets (hero video, scene.bin, three.js
+ * chunks). Each request counts its full transfer size once it finishes.
+ * Lazy assets stay in the report and cannot fail the gate.
  *
  * `ENFORCE_PERF_BUDGETS=1` fails the process. Any other value is report-only.
  */
@@ -87,13 +87,16 @@ export function formatBudgetReport(args: {
   failures: string[];
   fcpMs: number;
   note?: string;
-  /** Requests the browser opened before first paint that had not delivered bytes yet. */
-  pending?: string[];
+  /** Gated requests initiated before first paint that did not finish in time. */
+  unfinished?: string[];
+  /** Lazy requests initiated before first paint that were still transferring. */
+  lazyInFlight?: string[];
 }): string {
   const lines = [
     `perf-budget: ${args.enforced ? 'enforced' : 'report-only'}`,
     'page: /',
     'throttling: slow-3g',
+    'gated set: requests initiated before first contentful paint, full transfer size, lazy assets excluded',
     `fcpMs: ${args.fcpMs}`,
     `firstViewBytes: ${args.summary.firstViewBytes}`,
     `gatedFirstViewBytes: ${args.summary.gatedFirstViewBytes} (budget ${FIRST_VIEW_BYTE_BUDGET})`,
@@ -105,10 +108,21 @@ export function formatBudgetReport(args: {
     }`,
   ];
   if (args.note) lines.push(`note: ${args.note}`);
-  const pending = args.pending ?? [];
-  if (pending.length > 0) {
-    lines.push('started before paint with no bytes yet:');
-    for (const url of pending) lines.push(`  ${url}`);
+  const unfinished = args.unfinished ?? [];
+  if (unfinished.length > 0) {
+    lines.push('unfinished gated requests:');
+    for (const url of unfinished) lines.push(`  ${url}`);
+  }
+  const lazyInFlight = args.lazyInFlight ?? [];
+  if (lazyInFlight.length > 0) {
+    lines.push('lazy still in flight (not counted):');
+    for (const url of lazyInFlight) lines.push(`  ${url}`);
+  }
+  if (args.summary.oversizedGatedRequests.length > 0) {
+    lines.push('offending files:');
+    for (const request of args.summary.oversizedGatedRequests) {
+      lines.push(`  ${request.bytes} ${request.url}`);
+    }
   }
   lines.push('resources:');
   for (const resource of args.summary.resources) {
