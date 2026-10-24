@@ -75,12 +75,14 @@ jobs:
 
       - name: Confirm the preview Supabase and that protection is bypassed
         env:
+          # Same secret contract as playwright.config.ts vercelBypassHeaders.
           # GitHub masks this value in logs. Do not echo it.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           node --input-type=module <<'EOF'
           const secret = (process.env.VERCEL_AUTOMATION_BYPASS_SECRET || "").trim();
           console.log("Vercel protection bypass header: " + (secret ? "set" : "unset"));
+          // Same two headers as vercelBypassHeaders() in playwright.config.ts.
           const headers = {};
           if (secret) {
             headers["x-vercel-protection-bypass"] = secret;
@@ -169,7 +171,9 @@ jobs:
 
       - name: Smoke
         env:
-          # Do not echo this. Playwright sends it as x-vercel-protection-bypass.
+          # playwright.config.ts vercelBypassHeaders sends this as
+          # x-vercel-protection-bypass and x-vercel-set-bypass-cookie: true.
+          # Do not echo the secret. Trace stays off while the headers are set.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           E2E_SPEC: ${{ github.event.inputs.spec }}
           E2E_HOTFIX: ${{ github.event.inputs.spec == 'e2e/hotfix-24.spec.ts' && '1' || '' }}

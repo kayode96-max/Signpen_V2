@@ -25,14 +25,23 @@ export type PerfSample = {
   throttlingNote?: string;
   cpuThrottle: number | null;
   fcpMs: number | null;
-  /** Bytes on the wire by the time first contentful paint fires. */
-  firstViewBytes: number;
   /**
-   * Largest request that finished before first contentful paint.
-   * The hero video and scene.bin are omitted so they cannot trip the 300 KB cap.
+   * Full encoded size of every non-lazy request initiated before first
+   * contentful paint. This is PR #25's `gatedFirstViewBytes` (the 1 MB gate).
+   * #25's own `firstViewBytes` also includes lazy assets; that total is
+   * `inclusiveFirstViewBytes` here.
+   */
+  firstViewBytes: number;
+  /** Initiated-before-paint total including lazy assets. PR #25's `firstViewBytes`. */
+  inclusiveFirstViewBytes: number;
+  /** Lazy assets initiated before first paint. Reported only; they cannot fail the gate. */
+  lazyBytes: number;
+  /**
+   * Largest non-lazy request initiated before first contentful paint, full
+   * transfer size. The 300 KB cap reads this. Lazy assets are omitted.
    */
   largestFirstViewFileBytes: number;
-  /** Requests that finished before first contentful paint. */
+  /** Non-lazy requests initiated before first contentful paint, full transfer size. */
   firstViewResources: PerfResource[];
   /** Bytes for the full load, including assets that finish after first paint. */
   transferredBytes: number;
@@ -106,31 +115,72 @@ export function topResources(entries: { url: string; bytes: number }[]): PerfRes
   return aggregateResources(entries).slice(0, 5);
 }
 
-/** Later loads. They have their own budget and never count toward the 300 KB first-view file cap. */
-export function isDeferredAsset(url: string): boolean {
-  const pathname = safeResourceUrl(url).toLowerCase();
-  return pathname.endsWith('/vid1.mp4') || pathname.endsWith('/scene.bin');
+/**
+ * Hero video, the 3D model, and three.js chunks. Same matcher as PR #25
+ * `isLazyFirstViewAsset`: hashed `vid1.*.mp4`, `scene.bin`, and any pathname
+ * containing `three`. Report-only.
+ */
+export function isLazyFirstViewAsset(url: string): boolean {
+  const pathname = pathnameOf(url);
+  if (/\/vid1(?:\.[^/]+)?\.mp4$/i.test(pathname)) return true;
+  if (pathname.endsWith('/scene.bin')) return true;
+  if (pathname.includes('three')) return true;
+  return false;
 }
 
-export function emptyFirstView(): Pick<PerfSample, 'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'> {
-  return { firstViewBytes: 0, largestFirstViewFileBytes: 0, firstViewResources: [] };
-}
-
-/** Sum finished first-view requests. Deferred assets stay in the list and out of the cap. */
-export function summarizeFirstView(entries: { url: string; bytes: number }[]): Pick<
-  PerfSample,
-  'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'
-> {
-  const firstViewResources = aggregateResources(entries);
-  let largestFirstViewFileBytes = 0;
-  for (const resource of firstViewResources) {
-    if (isDeferredAsset(resource.url)) continue;
-    if (resource.bytes > largestFirstViewFileBytes) largestFirstViewFileBytes = resource.bytes;
+function pathnameOf(url: string): string {
+  try {
+    return new URL(url, 'http://127.0.0.1').pathname.toLowerCase();
+  } catch {
+    return url.split('#')[0].split('?')[0].toLowerCase();
   }
+}
+
+type FirstViewFields = Pick<
+  PerfSample,
+  'firstViewBytes' | 'inclusiveFirstViewBytes' | 'lazyBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'
+>;
+
+export function emptyFirstView(): FirstViewFields {
   return {
-    firstViewBytes: firstViewResources.reduce((sum, resource) => sum + resource.bytes, 0),
-    largestFirstViewFileBytes,
-    firstViewResources,
+    firstViewBytes: 0,
+    inclusiveFirstViewBytes: 0,
+    lazyBytes: 0,
+    largestFirstViewFileBytes: 0,
+    firstViewResources: [],
+  };
+}
+
+function stripHash(url: string): string {
+  return url.split('#')[0];
+}
+
+/**
+ * Full transfer size of requests initiated before first contentful paint.
+ * URLs are summed with the hash stripped and the query kept, matching PR #25.
+ * `firstViewBytes` excludes lazy assets (PR #25 `gatedFirstViewBytes`).
+ * `inclusiveFirstViewBytes` keeps them (PR #25 `firstViewBytes`).
+ */
+export function summarizeFirstView(entries: { url: string; bytes: number }[]): FirstViewFields {
+  const totals = new Map<string, number>();
+  for (const entry of entries) {
+    if (!Number.isFinite(entry.bytes) || entry.bytes <= 0) continue;
+    const url = stripHash(entry.url);
+    totals.set(url, (totals.get(url) ?? 0) + entry.bytes);
+  }
+  const resources = [...totals.entries()]
+    .map(([url, bytes]) => ({ url, bytes }))
+    .sort((left, right) => right.bytes - left.bytes || left.url.localeCompare(right.url));
+  const gated = resources.filter((resource) => !isLazyFirstViewAsset(resource.url));
+  const lazy = resources.filter((resource) => isLazyFirstViewAsset(resource.url));
+  const firstViewBytes = gated.reduce((sum, resource) => sum + resource.bytes, 0);
+  const lazyBytes = lazy.reduce((sum, resource) => sum + resource.bytes, 0);
+  return {
+    firstViewBytes,
+    inclusiveFirstViewBytes: firstViewBytes + lazyBytes,
+    lazyBytes,
+    largestFirstViewFileBytes: gated.reduce((largest, resource) => Math.max(largest, resource.bytes), 0),
+    firstViewResources: gated,
   };
 }
 
@@ -165,26 +215,58 @@ function performanceMsToCdp(anchor: ClockAnchor, timeOriginMs: number, perfMs: n
   return anchor.timestamp + (epochSeconds - anchor.wallTime);
 }
 
-function snapshotCdpFirstView(tracker: CdpTracker, fcpCdp: number | null): Pick<
-  PerfSample,
-  'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'
-> {
+/**
+ * Full encoded size of requests that started before first paint.
+ * Unfinished non-lazy requests contribute the bytes received so far.
+ * Lazy requests still in flight are left out, matching PR #25.
+ */
+function snapshotCdpFirstView(tracker: CdpTracker, fcpCdp: number | null): FirstViewFields {
   if (fcpCdp == null) return emptyFirstView();
-  const finished: { url: string; bytes: number }[] = [];
-  let partialBytes = 0;
+  const entries: { url: string; bytes: number }[] = [];
   for (const meta of tracker.meta.values()) {
     if (meta.generation !== tracker.generation) continue;
-    const doneBeforePaint = meta.finishedAt != null && meta.finishedAt <= fcpCdp;
-    if (doneBeforePaint) {
-      finished.push({ url: meta.url, bytes: meta.encodedBytes ?? 0 });
+    if (meta.startedAt > fcpCdp) continue;
+    if (meta.finishedAt == null) {
+      if (isLazyFirstViewAsset(meta.url)) continue;
+      const partial = meta.chunks.reduce((sum, chunk) => sum + chunk.bytes, 0);
+      if (partial > 0) entries.push({ url: meta.url, bytes: partial });
       continue;
     }
-    for (const chunk of meta.chunks) {
-      if (chunk.at <= fcpCdp) partialBytes += chunk.bytes;
-    }
+    entries.push({ url: meta.url, bytes: meta.encodedBytes ?? 0 });
   }
-  const summary = summarizeFirstView(finished);
-  return { ...summary, firstViewBytes: summary.firstViewBytes + partialBytes };
+  return summarizeFirstView(entries);
+}
+
+/** Non-lazy requests that started before first paint and have not finished. */
+function gatedInitiatedStillOpen(tracker: CdpTracker, fcpCdp: number): boolean {
+  for (const meta of tracker.meta.values()) {
+    if (meta.generation !== tracker.generation) continue;
+    if (meta.startedAt > fcpCdp) continue;
+    if (meta.finishedAt != null) continue;
+    if (isLazyFirstViewAsset(meta.url)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Wait until non-lazy requests initiated before first paint have finished.
+ * Lazy assets do not hold the wait open. Returns false when the cap is hit
+ * and a gated request is still in flight.
+ */
+async function waitForInitiatedTransfers(tracker: CdpTracker, fcpCdp: number, maxMs = 180_000): Promise<boolean> {
+  const deadline = Date.now() + maxMs;
+  let quietSince = 0;
+  while (Date.now() < deadline) {
+    if (!gatedInitiatedStillOpen(tracker, fcpCdp)) {
+      if (quietSince === 0) quietSince = Date.now();
+      if (Date.now() - quietSince >= 1_000) return true;
+    } else {
+      quietSince = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return !gatedInitiatedStillOpen(tracker, fcpCdp);
 }
 
 function isLongLivedTransfer(type: string | undefined, url: string): boolean {
@@ -246,7 +328,7 @@ async function waitForTransferToSettle(page: Page, tracker: CdpTracker, maxMs = 
 
 async function readResourceTiming(
   page: Page,
-): Promise<{ fcpMs: number | null; timeOrigin: number; entries: { url: string; bytes: number; responseEnd: number | null }[] }> {
+): Promise<{ fcpMs: number | null; timeOrigin: number; entries: { url: string; bytes: number; startTime: number; responseEnd: number | null }[] }> {
   return page.evaluate(() => {
     const fcp = performance.getEntriesByName('first-contentful-paint')[0];
     const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
@@ -255,20 +337,28 @@ async function readResourceTiming(
       fcpMs: fcp ? Math.round(fcp.startTime) : null,
       timeOrigin: performance.timeOrigin,
       entries: [
-        ...(navigation ? [{ url: navigation.name, bytes: navigation.transferSize || 0, responseEnd: navigation.responseEnd }] : []),
-        ...resources.map((entry) => ({ url: entry.name, bytes: entry.transferSize || 0, responseEnd: entry.responseEnd })),
+        ...(navigation
+          ? [{ url: navigation.name, bytes: navigation.transferSize || 0, startTime: navigation.startTime, responseEnd: navigation.responseEnd }]
+          : []),
+        ...resources.map((entry) => ({
+          url: entry.name,
+          bytes: entry.transferSize || 0,
+          startTime: entry.startTime,
+          responseEnd: entry.responseEnd,
+        })),
       ],
     };
   });
 }
 
+/** WebKit has no CDP byte stream. Resource timing's transferSize is the full size once the entry exists. */
 function firstViewFromTiming(
-  entries: { url: string; bytes: number; responseEnd: number | null }[],
+  entries: { url: string; bytes: number; startTime: number; responseEnd: number | null }[],
   fcpMs: number | null,
-): Pick<PerfSample, 'firstViewBytes' | 'largestFirstViewFileBytes' | 'firstViewResources'> {
+): FirstViewFields {
   if (fcpMs == null) return emptyFirstView();
-  const finished = entries.filter((entry) => entry.responseEnd != null && entry.responseEnd > 0 && entry.responseEnd <= fcpMs);
-  return summarizeFirstView(finished);
+  const initiated = entries.filter((entry) => entry.startTime <= fcpMs);
+  return summarizeFirstView(initiated);
 }
 
 export async function measurePage(args: {
@@ -283,6 +373,8 @@ export async function measurePage(args: {
     PerfSample,
     | 'fcpMs'
     | 'firstViewBytes'
+    | 'inclusiveFirstViewBytes'
+    | 'lazyBytes'
     | 'largestFirstViewFileBytes'
     | 'firstViewResources'
     | 'transferredBytes'
@@ -400,10 +492,21 @@ export async function measurePage(args: {
     });
 
     let transferNote: string | undefined;
+    if (tracker && throttling === 'slow-3g' && tracker.anchor && fcpAppeared) {
+      const earlyTiming = await readResourceTiming(page);
+      if (earlyTiming.fcpMs != null) {
+        const fcpCdp = performanceMsToCdp(tracker.anchor, earlyTiming.timeOrigin, earlyTiming.fcpMs);
+        const gatedSettled = await waitForInitiatedTransfers(tracker, fcpCdp);
+        if (!gatedSettled) {
+          transferNote = 'Some non-lazy requests initiated before first paint were still in flight after 180s.';
+        }
+      }
+    }
     if (tracker && throttling === 'slow-3g') {
       const settled = await waitForTransferToSettle(page, tracker);
       if (!settled) {
-        transferNote = 'In-flight responses were still open after 180s, so transferredBytes may be short.';
+        const fullLoadNote = 'In-flight responses were still open after 180s, so transferredBytes may be short.';
+        transferNote = transferNote ? `${transferNote} ${fullLoadNote}` : fullLoadNote;
       }
     }
 

@@ -8,9 +8,11 @@ import { measurePage, publishProjectSamples, smokeTargets, type PerfSample } fro
  * has no CDP throttle, so those rows are marked unthrottled.
  *
  * Report-only unless ENFORCE_PERF_BUDGETS=1. Gates read Chromium slow-3g
- * rows only. WebKit rows are unthrottled. The 300 KB cap is the largest
- * file that finished before first contentful paint, excluding the hero
- * video and scene.bin. The merged file is e2e/results/perf-baseline.json.
+ * rows only. WebKit rows are unthrottled. `firstViewBytes` is the full
+ * encoded size of non-lazy requests initiated before first contentful paint
+ * (PR #25 `gatedFirstViewBytes`). The 300 KB cap is the largest of those
+ * requests. Lazy assets are hashed `vid1*.mp4`, `scene.bin`, and any
+ * pathname containing `three`. The merged file is e2e/results/perf-baseline.json.
  */
 
 function budget(name: string, fallback: number): number {
@@ -52,7 +54,7 @@ test('records a perf baseline for each smoke page', async ({ browser, browserNam
     });
     samples.push(sample);
     console.log(
-      `[perf] ${sample.project} ${sample.page} ${sample.throttling} fcp=${sample.fcpMs ?? 'n/a'}ms firstView=${sample.firstViewBytes} largestFirstViewFile=${sample.largestFirstViewFileBytes} bytes=${sample.transferredBytes} requests=${sample.requestCount}`,
+      `[perf] ${sample.project} ${sample.page} ${sample.throttling} fcp=${sample.fcpMs ?? 'n/a'}ms firstView=${sample.firstViewBytes} inclusive=${sample.inclusiveFirstViewBytes} lazy=${sample.lazyBytes} largestFirstViewFile=${sample.largestFirstViewFileBytes} bytes=${sample.transferredBytes} requests=${sample.requestCount}`,
     );
   }
 
@@ -71,8 +73,8 @@ test('records a perf baseline for each smoke page', async ({ browser, browserNam
   const misses = samples.filter((sample) => {
     if (sample.throttling !== 'slow-3g') return false;
     const fcpOver = sample.fcpMs === null || sample.fcpMs >= fcpBudgetMs;
-    const bytesOver = sample.firstViewBytes >= firstViewBudgetBytes;
-    const fileOver = sample.largestFirstViewFileBytes >= firstViewFileBudgetBytes;
+    const bytesOver = sample.firstViewBytes > firstViewBudgetBytes;
+    const fileOver = sample.largestFirstViewFileBytes > firstViewFileBudgetBytes;
     return fcpOver || bytesOver || fileOver || !sample.loadFinished || Boolean(sample.error);
   });
   if (misses.length > 0) {
