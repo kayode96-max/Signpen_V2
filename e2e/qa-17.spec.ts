@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type APIRequestContext, type APIResponse, type Page, type TestInfo } from '@playwright/test';
 import { measurePage } from './perf-baseline';
 import { collectConsole, horizontalOverflow } from './support';
 
@@ -36,18 +36,20 @@ test('7 mixed-case redirect and unknown 404', async ({ request }, testInfo) => {
   qa17(testInfo);
   test.skip(testInfo.project.name !== 'chromium', 'API redirects are checked once');
   const baseURL = refuseProduction();
+  // Follow the protection-cookie redirect once so later maxRedirects:0 reads are the app.
+  await request.get('/');
   const mixed = BOARD_ID.toUpperCase();
   const query = 'from=QR';
-  const pageRedirect = await request.get(`/${mixed}?${query}`, { maxRedirects: 0 });
-  const apiRedirect = await request.get(`/api/boards/${mixed}/signatures?${query}`, { maxRedirects: 0 });
+  const pageRedirect = await getApp(request, `/${mixed}?${query}`, baseURL);
+  const apiRedirect = await getApp(request, `/api/boards/${mixed}/signatures?${query}`, baseURL);
   const pageLocation = locationPath(pageRedirect.headers().location ?? '', baseURL);
   const apiLocation = locationPath(apiRedirect.headers().location ?? '', baseURL);
   const unknown = '00000000-0000-4000-8000-00000000017a';
-  const unknownApi = await request.get(`/api/boards/${unknown}/signatures`, { maxRedirects: 0 });
-  const unknownPage = await request.get(`/${unknown}`, { maxRedirects: 0 });
-  const slugApi = await request.get('/api/boards/qa-unknown-2026/signatures', { maxRedirects: 0 });
-  const slugPage = await request.get('/qa-unknown-2026', { maxRedirects: 0 });
-  const slugRedirect = await request.get('/api/boards/QA-UNKNOWN-2026/signatures?from=QR', { maxRedirects: 0 });
+  const unknownApi = await getApp(request, `/api/boards/${unknown}/signatures`, baseURL);
+  const unknownPage = await getApp(request, `/${unknown}`, baseURL);
+  const slugApi = await getApp(request, '/api/boards/qa-unknown-2026/signatures', baseURL);
+  const slugPage = await getApp(request, '/qa-unknown-2026', baseURL);
+  const slugRedirect = await getApp(request, '/api/boards/QA-UNKNOWN-2026/signatures?from=QR', baseURL);
   const evidence = [
     `page ${pageRedirect.status()} -> ${pageLocation || 'no location'} cache=${pageRedirect.headers()['cache-control'] || 'absent'}`,
     `api ${apiRedirect.status()} -> ${apiLocation || 'no location'} cache=${apiRedirect.headers()['cache-control'] || 'absent'}`,
@@ -105,7 +107,14 @@ test('8 smoke pages and contact overflow', async ({ page, isMobile }, testInfo) 
     let overflow = 'n/a';
     if (isMobile) {
       const layout = await horizontalOverflow(page);
-      overflow = layout.overflow ? `OVERFLOW ${layout.offenders.join('; ') || 'document'}` : 'none';
+      const widths = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }));
+      const delta = widths.scroll - widths.client;
+      overflow = layout.overflow
+        ? `OVERFLOW delta=${delta}px scroll=${widths.scroll} client=${widths.client} ${layout.offenders.join('; ') || 'no element past the viewport'}`
+        : `none delta=${delta}px`;
       if (layout.overflow) failures.push(`${path} ${overflow}`);
     }
     const errors = consoleErrors.errors();
@@ -273,21 +282,41 @@ function locationPath(location: string, baseURL: string): string {
   return `${url.pathname}${url.search}`;
 }
 
+/**
+ * The bypass header can answer with a 307 back to the same path so the
+ * protection cookie can be stored. That hop is not the app redirect.
+ */
+async function getApp(request: APIRequestContext, path: string, baseURL: string): Promise<APIResponse> {
+  const first = await request.get(path, { maxRedirects: 0 });
+  const location = locationPath(first.headers().location ?? '', baseURL);
+  const requested = locationPath(path, baseURL);
+  const cookieHop = (first.status() === 307 || first.status() === 302) && location === requested;
+  if (!cookieHop) return first;
+  return request.get(path, { maxRedirects: 0 });
+}
+
 async function dismissInstructions(page: Page): Promise<void> {
   const gotIt = page.getByRole('button', { name: 'Got it!' });
-  if (await gotIt.isVisible().catch(() => false)) await gotIt.click();
+  const appeared = await gotIt.waitFor({ state: 'visible', timeout: 12_000 }).then(() => true).catch(() => false);
+  if (!appeared) return;
+  await gotIt.click();
+  await gotIt.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
 }
 
 async function openSigningDialog(page: Page): Promise<{ ok: boolean; evidence: string }> {
   const button = page.getByRole('button', { name: 'Leave Your Signature' });
-  if (!(await button.isVisible().catch(() => false))) {
-    const text = (await page.locator('body').innerText()).slice(0, 240);
-    return { ok: false, evidence: `Leave Your Signature is not visible. body=${text}` };
+  await button.scrollIntoViewIfNeeded().catch(() => undefined);
+  try {
+    await button.click({ force: true, timeout: 20_000 });
+  } catch (error) {
+    const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 240);
+    return { ok: false, evidence: `click failed ${error instanceof Error ? error.message.split('\n')[0] : 'unknown'} body=${text}` };
   }
-  await button.click();
   const dialog = page.getByRole('dialog').filter({ hasText: 'Before you sign' });
   const appeared = await dialog.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
-  return appeared ? { ok: true, evidence: '' } : { ok: false, evidence: 'Before you sign dialog did not open' };
+  if (appeared) return { ok: true, evidence: '' };
+  const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 280);
+  return { ok: false, evidence: `Before you sign dialog did not open. body=${text}` };
 }
 
 async function drawAndSubmit(page: Page): Promise<string> {
