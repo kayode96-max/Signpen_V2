@@ -29,8 +29,6 @@ import {
   Nothing_You_Could_Do,
   Cedarville_Cursive,
 } from 'next/font/google'
-import Image from "next/image";
-
 export const metadata: Metadata = {
   title: "SignPen",
   description:
@@ -224,10 +222,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={`${alegreya.variable} ${inter.variable} ${caveat.variable} ${dancingScript.variable} ${pacifico.variable} ${indieFlower.variable} ${sourceCodePro.variable} ${greatVibes.variable} ${sacramento.variable} ${monsieurLaDoulaise.variable} ${unifrakturMaguntia.variable} ${alexBrush.variable} ${allura.variable} ${cookie.variable} ${kaushanScript.variable} ${marckScript.variable} ${satisfy.variable} ${yellowtail.variable} ${parisienne.variable} ${tangerine.variable} ${italianno.variable} ${nothingYouCouldDo.variable} ${cedarvilleCursive.variable}`}>
-      <head>
-          <link rel="icon" href="/images/signpen.png" type="image/png" />
-
-      </head>
       <body
         className={cn("min-h-screen bg-background font-body antialiased")}
       >

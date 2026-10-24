@@ -9,6 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:unit": "node --test src/lib/public/board-url.test.mjs",
     "perf:budget": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/perf-budget.mts"
   },
   "dependencies": {

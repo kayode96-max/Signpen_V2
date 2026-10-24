@@ -1,0 +1,201 @@
+# Separate from CI. Runs the read-only Playwright smoke against a Vercel preview URL.
+name: e2e
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Preview or local URL to test
+        required: true
+        type: string
+      spec:
+        description: Optional spec path, for example e2e/hotfix-24.spec.ts
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  # One group per deployment. workflow_dispatch runs on the same ref must not
+  # cancel each other when they target different preview URLs.
+  # github.event.inputs is empty for deployment_status, so this falls through
+  # to the deployment sha. The inputs context is not used here: this workflow
+  # also triggers on deployment_status.
+  group: e2e-${{ github.event.deployment.sha || github.event.inputs.base_url || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Playwright smoke
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && contains(github.event.deployment_status.environment, 'Preview')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BASE_URL: ${{ github.event.inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The suite lives with this workflow. The preview URL is the system
+          # under test, so a deployment_status run keeps this checkout and
+          # points BASE_URL at the deployment.
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Require a non-production BASE_URL
+        run: |
+          test -n "$BASE_URL"
+          node --input-type=module <<'EOF'
+          const raw = process.env.BASE_URL;
+          let url;
+          try {
+            url = new URL(raw);
+          } catch {
+            console.error("BASE_URL is not an absolute URL");
+            process.exit(1);
+          }
+          const host = url.hostname.toLowerCase();
+          if (host === "signpen.xyz" || host === "www.signpen.xyz" || host.endsWith(".signpen.xyz")) {
+            console.error("Refusing production host");
+            process.exit(1);
+          }
+          console.log(`Testing host ${host}`);
+          EOF
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Confirm the preview Supabase and that protection is bypassed
+        env:
+          # Same secret contract as playwright.config.ts vercelBypassHeaders.
+          # GitHub masks this value in logs. Do not echo it.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          node --input-type=module <<'EOF'
+          const secret = (process.env.VERCEL_AUTOMATION_BYPASS_SECRET || "").trim();
+          console.log("Vercel protection bypass header: " + (secret ? "set" : "unset"));
+          // Same two headers as vercelBypassHeaders() in playwright.config.ts.
+          const headers = {};
+          if (secret) {
+            headers["x-vercel-protection-bypass"] = secret;
+            headers["x-vercel-set-bypass-cookie"] = "true";
+          }
+          const previewRef = "vackuntdjgfmxhwxjuqt";
+          const productionRef = "avsguiynrukacgqnxwku";
+          const base = new URL(process.env.BASE_URL);
+          const refs = new Set();
+          const seen = new Set();
+          const queue = [new URL("/", base).href];
+          const jar = new Map();
+          const collect = (text) => {
+            for (const match of text.matchAll(/https:\/\/([a-z0-9-]+)\.supabase\.co/gi)) {
+              refs.add(match[1].toLowerCase());
+            }
+          };
+          // Manual redirects: x-vercel-set-bypass-cookie answers with a redirect,
+          // and Node fetch does not store the cookie, so redirect:"follow" loops.
+          const fetchSettled = async (target) => {
+            let current = target;
+            for (let hop = 0; hop < 4; hop++) {
+              const cookie = [...jar.entries()].map(([name, value]) => name + "=" + value).join("; ");
+              const hopHeaders = { ...headers };
+              if (cookie) hopHeaders.cookie = cookie;
+              const response = await fetch(current, { headers: hopHeaders, redirect: "manual" });
+              const setCookies = typeof response.headers.getSetCookie === "function"
+                ? response.headers.getSetCookie()
+                : [];
+              for (const raw of setCookies) {
+                const pair = raw.split(";")[0];
+                const eq = pair.indexOf("=");
+                if (eq > 0) jar.set(pair.slice(0, eq), pair.slice(eq + 1));
+              }
+              if (response.status >= 300 && response.status < 400) {
+                const location = response.headers.get("location");
+                if (!location) return { status: response.status, text: "" };
+                const next = new URL(location, current);
+                if (next.origin !== base.origin) {
+                  console.error("Refusing redirect off the preview origin (HTTP " + response.status + ")");
+                  process.exit(1);
+                }
+                current = next.href;
+                continue;
+              }
+              return { status: response.status, text: await response.text() };
+            }
+            console.error("Preview redirect did not settle");
+            process.exit(1);
+          };
+          let firstStatus = 0;
+          while (queue.length > 0 && seen.size < 25) {
+            const target = queue.shift();
+            if (seen.has(target)) continue;
+            seen.add(target);
+            const { status, text } = await fetchSettled(target);
+            if (seen.size === 1) {
+              firstStatus = status;
+              const lowered = text.toLowerCase();
+              const wall = firstStatus === 401 || firstStatus === 403
+                || lowered.includes("authentication required")
+                || lowered.includes("vercel.com/login")
+                || lowered.includes("vercel authentication");
+              if (wall) {
+                console.error("Preview is behind a Vercel login wall (HTTP " + firstStatus + ")");
+                process.exit(1);
+              }
+              for (const match of text.matchAll(/(?:src|href)="([^"]+\.js[^"]*)"/g)) {
+                const next = new URL(match[1], target);
+                if (next.origin === base.origin) queue.push(next.href);
+              }
+            }
+            collect(text);
+          }
+          const listed = [...refs].join(", ") || "none";
+          console.log("Preview HTTP " + firstStatus);
+          console.log("Supabase refs: " + listed);
+          if (refs.has(productionRef) || !refs.has(previewRef)) {
+            console.error("Refusing to test a deployment that is not Supabase project " + previewRef);
+            process.exit(1);
+          }
+          EOF
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Smoke
+        env:
+          # playwright.config.ts vercelBypassHeaders sends this as
+          # x-vercel-protection-bypass and x-vercel-set-bypass-cookie: true.
+          # Do not echo the secret. Trace stays off while the headers are set.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          E2E_SPEC: ${{ github.event.inputs.spec }}
+          E2E_HOTFIX: ${{ github.event.inputs.spec == 'e2e/hotfix-24.spec.ts' && '1' || '' }}
+        run: |
+          if [ -n "$E2E_SPEC" ]; then
+            case "$E2E_SPEC" in
+              e2e/*.spec.ts)
+                npm run test:e2e -- "$E2E_SPEC"
+                ;;
+              *)
+                echo "Refusing spec filter"
+                exit 1
+                ;;
+            esac
+          else
+            npm run test:e2e
+          fi
+
+      - name: Upload perf baseline
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-baseline
+          path: e2e/results/perf-baseline.json
+          if-no-files-found: warn
