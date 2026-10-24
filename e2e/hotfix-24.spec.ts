@@ -73,12 +73,13 @@ test.describe('PR 24 security hotfix', () => {
       throw new Error('Refusing to run against production signpen.xyz');
     }
 
-    const discovered = await discoverSupabase(request, baseURL);
-    const previewOk =
-      discovered.refs.includes(PREVIEW_REF) && !discovered.refs.includes(PRODUCTION_REF);
+    const discovered = await discoverSupabase(page, request, baseURL);
+    const liveRefs = discovered.refs.filter((ref) => ref !== 'placeholder');
+    const previewOk = liveRefs.includes(PREVIEW_REF) && !liveRefs.includes(PRODUCTION_REF);
     if (!previewOk || !discovered.supabaseUrl || !discovered.anonKey) {
       throw new Error(
-        `Refusing writes. Supabase refs: ${discovered.refs.join(', ') || 'none'}. ` +
+        `Refusing writes. Live Supabase refs: ${liveRefs.join(', ') || 'none'}. ` +
+          `Anon key ${discovered.anonKey ? 'found' : 'missing'}. ` +
           'Writes require preview project vackuntdjgfmxhwxjuqt and must not see production.',
       );
     }
@@ -240,40 +241,57 @@ test.describe('PR 24 security hotfix', () => {
 });
 
 async function discoverSupabase(
+  page: Page,
   request: APIRequestContext,
   baseURL: string,
 ): Promise<{ supabaseUrl: string; anonKey: string; refs: string[] }> {
   const origin = new URL(baseURL).origin;
   const refs = new Set<string>();
   let anonKey = '';
-  const queue = [new URL('/', origin).href, new URL('/contact', origin).href, new URL('/login', origin).href];
-  const seen = new Set<string>();
+  const rememberKey = (value: string | undefined) => {
+    if (!anonKey && value && value !== 'placeholder' && value.length > 20) anonKey = value;
+  };
   const note = (text: string) => {
     for (const match of text.matchAll(/https:\/\/([a-z0-9-]+)\.supabase\.co/gi)) {
       refs.add(match[1].toLowerCase());
     }
-    if (!anonKey) {
-      const key = text.match(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/);
-      if (key) anonKey = key[0];
-    }
+    const jwt = text.match(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/);
+    const publishable = text.match(/sb_publishable_[A-Za-z0-9_-]{20,}/);
+    rememberKey(jwt?.[0] ?? publishable?.[0]);
   };
-  while (queue.length > 0 && seen.size < 40) {
+  page.on('request', (req) => {
+    const match = req.url().match(/https:\/\/([a-z0-9-]+)\.supabase\.co/i);
+    if (match) refs.add(match[1].toLowerCase());
+    rememberKey(req.headers().apikey);
+  });
+
+  const contact = await page.goto(new URL('/contact', origin).href, { waitUntil: 'domcontentloaded' });
+  if ((contact?.status() ?? 0) === 401 || (contact?.status() ?? 0) === 403) {
+    throw new Error(`Preview is behind a Vercel login wall (HTTP ${contact?.status()})`);
+  }
+  note(await page.content());
+
+  const queue = [new URL('/', origin).href, new URL('/contact', origin).href, new URL('/login', origin).href];
+  const seen = new Set<string>();
+  while (queue.length > 0 && seen.size < 40 && !anonKey) {
     const target = queue.shift();
     if (!target || seen.has(target)) continue;
     seen.add(target);
     const response = await request.get(target, { maxRedirects: 5 });
-    const text = await response.text();
-    note(text);
-    if (seen.size <= 3) {
-      for (const match of text.matchAll(/(?:src|href)="([^"]+\.js[^"]*)"/g)) {
-        const next = new URL(match[1], target);
-        if (next.origin === origin) queue.push(next.href);
-      }
-    }
     if (response.status() === 401 || response.status() === 403) {
       throw new Error(`Preview is behind a Vercel login wall (HTTP ${response.status()})`);
     }
+    const text = await response.text();
+    note(text);
+    for (const match of text.matchAll(/(?:src|href)="([^"]+\.js[^"]*)"/g)) {
+      const next = new URL(match[1], target);
+      if (next.origin === origin) queue.push(next.href);
+    }
+    for (const match of text.matchAll(/\/_next\/static\/[^"'\\\s>]+\.js/g)) {
+      queue.push(new URL(match[0], origin).href);
+    }
   }
+
   const listed = [...refs];
   const supabaseUrl = listed.includes(PREVIEW_REF) ? `https://${PREVIEW_REF}.supabase.co` : '';
   return { supabaseUrl, anonKey, refs: listed };
