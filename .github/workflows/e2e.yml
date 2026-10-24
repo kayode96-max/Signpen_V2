@@ -15,7 +15,9 @@ permissions:
   actions: write
 
 concurrency:
-  group: e2e-${{ github.event.deployment.sha || github.ref }}
+  # One group per deployment. workflow_dispatch runs on the same ref must not
+  # cancel each other when they target different preview URLs.
+  group: e2e-${{ github.event.deployment.sha || inputs.base_url || github.ref }}
   cancel-in-progress: true
 
 jobs:
