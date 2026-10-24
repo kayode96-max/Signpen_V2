@@ -18,7 +18,7 @@ function vercelBypassHeaders(): Record<string, string> | undefined {
 }
 
 const bypassHeaders = vercelBypassHeaders();
-const mobileAndPerf = /(?:public-pages|perf-baseline)\.spec\.ts/;
+const mobileAndPerf = /(?:public-pages|perf-baseline|qa-17)\.spec\.ts/;
 
 const config: PlaywrightTestConfig = {
   testDir: './e2e',
