@@ -23,6 +23,19 @@ function qa17(testInfo: TestInfo): void {
   testInfo.skip(process.env.E2E_QA17 !== '1', 'E2E_QA17=1 runs this file against the #17 preview');
 }
 
+async function overflowSample(page: Page): Promise<{ overflow: boolean; text: string }> {
+  const layout = await horizontalOverflow(page);
+  const widths = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+  const delta = widths.scroll - widths.client;
+  const text = layout.overflow
+    ? `OVERFLOW delta=${delta}px scroll=${widths.scroll} client=${widths.client} ${layout.offenders.join('; ') || 'no element past the viewport'}`
+    : `none delta=${delta}px scroll=${widths.scroll} client=${widths.client}`;
+  return { overflow: layout.overflow, text };
+}
+
 function refuseProduction(): string {
   const baseURL = process.env.BASE_URL || 'http://localhost:3000';
   const host = new URL(baseURL).hostname.toLowerCase();
@@ -103,19 +116,23 @@ test('8 smoke pages and contact overflow', async ({ page, isMobile }, testInfo) 
     const status = response?.status() ?? 0;
     await ready(page).waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
     const visible = await ready(page).isVisible().catch(() => false);
-    await page.waitForTimeout(1500);
     let overflow = 'n/a';
-    if (isMobile) {
-      const layout = await horizontalOverflow(page);
-      const widths = await page.evaluate(() => ({
-        scroll: document.documentElement.scrollWidth,
-        client: document.documentElement.clientWidth,
-      }));
-      const delta = widths.scroll - widths.client;
-      overflow = layout.overflow
-        ? `OVERFLOW delta=${delta}px scroll=${widths.scroll} client=${widths.client} ${layout.offenders.join('; ') || 'no element past the viewport'}`
-        : `none delta=${delta}px`;
-      if (layout.overflow) failures.push(`${path} ${overflow}`);
+    if (isMobile && path === '/contact') {
+      // The support card used to enter with translateX(20px). Sample the first
+      // painted frame, then again after the 0.6s entrance has finished.
+      const first = await overflowSample(page);
+      await page.waitForTimeout(900);
+      const settled = await overflowSample(page);
+      overflow = `firstPaint ${first.text} afterAnimation ${settled.text}`;
+      if (first.overflow) failures.push(`${path} first paint ${first.text}`);
+      if (settled.overflow) failures.push(`${path} after animation ${settled.text}`);
+    } else {
+      await page.waitForTimeout(1500);
+      if (isMobile) {
+        const sample = await overflowSample(page);
+        overflow = sample.text;
+        if (sample.overflow) failures.push(`${path} ${overflow}`);
+      }
     }
     const errors = consoleErrors.errors();
     if (status !== 200) failures.push(`${path} HTTP ${status}`);
