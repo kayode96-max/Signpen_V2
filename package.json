@@ -43,7 +43,7 @@
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
     "lucide-react": "^0.475.0",
-    "next": "15.3.6",
+    "next": "15.5.28",
     "noto-color-emoji": "^1.0.0",
     "patch-package": "^8.0.0",
     "react": "^18.3.1",
