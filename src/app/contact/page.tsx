@@ -408,8 +408,8 @@ export default function ContactPage() {
             {/* Email Channels Card */}
             <motion.div 
               className="bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md p-6 rounded-2xl shadow-xl"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
               <h2 className="text-xl font-bold font-headline mb-4 flex items-center gap-2">
