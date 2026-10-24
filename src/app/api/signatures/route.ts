@@ -5,10 +5,12 @@ import { boardCacheTag } from '@/lib/cache/board';
 import { getClientIp } from '@/lib/security/client-ip';
 import { createSignature, type SignatureWriteArgs, type TurnstileCheck } from '@/lib/server/signatures';
 import { requireRequestUser } from '@/lib/server/session';
+import { privateNoStore } from '@/lib/server/private-no-store';
 import { createServiceClient, MissingServerConfigError } from '@/lib/server/supabase';
 import { verifyTurnstileToken } from '@/lib/server/turnstile';
 
 export const runtime = 'nodejs';
+// Varies by Authorization. Never statically generated, ISR-cached, or shared via s-maxage.
 export const dynamic = 'force-dynamic';
 
 const studentIdSchema = z.string().uuid();
@@ -18,18 +20,19 @@ const studentIdSchema = z.string().uuid();
  * The rule is one signature per device session per board (signature_signers),
  * not one per IP, so people on shared Wi-Fi can each sign. Without a session
  * header the answer is false: a visitor without a session has not signed.
+ * Every status is private and uncached: the answer depends on Authorization.
  */
 export async function GET(req: NextRequest) {
   const parsed = studentIdSchema.safeParse(req.nextUrl.searchParams.get('studentId'));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'studentId must be a UUID.' }, { status: 400 });
+    return privateNoStore(NextResponse.json({ error: 'studentId must be a UUID.' }, { status: 400 }));
   }
   if (!(req.headers.get('authorization') ?? '').startsWith('Bearer ')) {
-    return NextResponse.json({ alreadySigned: false });
+    return privateNoStore(NextResponse.json({ alreadySigned: false }));
   }
 
   const session = await requireRequestUser(req);
-  if (!session.ok) return session.response;
+  if (!session.ok) return privateNoStore(session.response);
 
   try {
     const service = createServiceClient();
@@ -39,15 +42,15 @@ export async function GET(req: NextRequest) {
     });
     if (error || typeof data !== 'boolean') {
       console.error('signer_has_signed failed:', error?.code ?? 'no boolean');
-      return NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 });
+      return privateNoStore(NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 }));
     }
-    return NextResponse.json({ alreadySigned: data });
+    return privateNoStore(NextResponse.json({ alreadySigned: data }));
   } catch (err) {
     if (err instanceof MissingServerConfigError) {
-      return NextResponse.json({ error: err.message }, { status: 503 });
+      return privateNoStore(NextResponse.json({ error: err.message }, { status: 503 }));
     }
     console.error('Unexpected error in signatures GET handler.');
-    return NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 });
+    return privateNoStore(NextResponse.json({ error: 'Failed to verify signing history.' }, { status: 500 }));
   }
 }
 

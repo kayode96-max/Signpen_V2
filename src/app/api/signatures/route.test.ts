@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const requireRequestUser = vi.hoisted(() => vi.fn());
@@ -105,6 +105,22 @@ describe('GET /api/signatures (already signed from this device session)', () => 
     expect(await response.json()).toEqual({ alreadySigned: false });
     expect(requireRequestUser).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('sends Cache-Control private, no-store on 200 and 401', async () => {
+    const ok = await get(BOARD);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('cache-control')).toBe('private, no-store');
+    expect(ok.headers.get('cache-control')).not.toMatch(/s-maxage/i);
+
+    requireRequestUser.mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: 'Unauthorized: Could not verify your session.' }, { status: 401 }),
+    });
+    const denied = await get(BOARD);
+    expect(denied.status).toBe(401);
+    expect(denied.headers.get('cache-control')).toBe('private, no-store');
+    expect(denied.headers.get('cache-control')).not.toMatch(/s-maxage/i);
   });
 
   it('rejects a non-uuid board and hides lookup errors', async () => {

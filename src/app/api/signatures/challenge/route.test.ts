@@ -35,6 +35,8 @@ describe('GET /api/signatures/challenge', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('cache-control')).not.toMatch(/s-maxage/i);
     expect(body).toEqual({ challenge_required: true });
     expect(Object.keys(body)).toEqual(['challenge_required']);
     expect(JSON.stringify(body)).not.toContain(IP);
@@ -52,7 +54,9 @@ describe('GET /api/signatures/challenge', () => {
   });
 
   it('rejects a missing or non-uuid board id', async () => {
-    expect((await get('not-a-uuid')).status).toBe(400);
+    const bad = await get('not-a-uuid');
+    expect(bad.status).toBe(400);
+    expect(bad.headers.get('cache-control')).toBe('private, no-store');
     expect((await get(null)).status).toBe(400);
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -66,6 +70,8 @@ describe('GET /api/signatures/challenge', () => {
     rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'permission denied' } });
     const response = await get();
     expect(response.status).toBe(500);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('cache-control')).not.toMatch(/s-maxage/i);
     expect(JSON.stringify(await response.json())).not.toMatch(/42501|permission|203\.0\.113/);
   });
 });
