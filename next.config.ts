@@ -3,12 +3,6 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   images: {
     remotePatterns: [
       {
@@ -42,6 +36,19 @@ const nextConfig: NextConfig = {
         hostname: 'storage.googleapis.com',
       }
     ],
+  },
+  async headers() {
+    return [
+      {
+        source: '/images/vid1.d685294af0.mp4',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
   },
 };
 

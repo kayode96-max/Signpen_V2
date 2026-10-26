@@ -8,6 +8,7 @@ import { NavLinks } from '../../constants';
 import { Button } from '@/components/ui/button';
 import { User as UserIcon } from 'lucide-react';
 import UserNav from '@/components/dashboard/user-nav';
+import SignpenLogo from '@/components/brand/signpen-logo';
 
 const NavBar = () => {
   const { user } = useUser();
@@ -29,12 +30,9 @@ const NavBar = () => {
       <nav className='container mx-auto flex items-center justify-between py-4 px-6 2xl:px-0'>
         {/* Left Side: Logo */}
         <Link href="/" className="flex items-center">
-          <img 
-            src="/images/signpen.png" 
-            alt="Signpen Logo" 
-            width={50} 
-            height={50} 
-            className='cursor-pointer hover:-translate-y-0.5 transition-all duration-300 ease-in-out'
+          <SignpenLogo
+            title="Signpen Logo"
+            className="h-[50px] w-[50px] cursor-pointer hover:-translate-y-0.5 transition-all duration-300 ease-in-out"
           />
         </Link>
 

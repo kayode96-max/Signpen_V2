@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Africa/Lagos
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Keep Next.js and its ESLint config on the same major/minor; bump them
+      # together deliberately.
+      - dependency-name: next
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: eslint-config-next
+        update-types: [version-update:semver-major, version-update:semver-minor]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Africa/Lagos
+    groups:
+      github-actions:
+        patterns: ["*"]
