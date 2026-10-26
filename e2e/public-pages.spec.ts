@@ -36,7 +36,18 @@ for (const { path, ready } of PAGES) {
     await page.waitForTimeout(1500);
 
     if (isMobile) {
-      const layout = await horizontalOverflow(page);
+      let layout = await horizontalOverflow(page);
+      // iPhone 12 /contact has failed this check with no element past the viewport
+      // (document scrollWidth only) on otherwise identical builds, including a
+      // lockfile-only parser bump. An element that actually sticks out still
+      // fails immediately. A document-only miss gets one more sample after fonts
+      // settle, which is the same entrance/font timing the contact page already
+      // special-cases in qa-17.
+      if (layout.overflow && layout.offenders.length === 0) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.waitForTimeout(1000);
+        layout = await horizontalOverflow(page);
+      }
       expect(
         layout.overflow,
         `horizontal overflow at mobile width: ${layout.offenders.join('; ') || 'document scrollWidth'}`,
