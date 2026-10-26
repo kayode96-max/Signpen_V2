@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition, useMemo, useCallback } from 'react';
+import React, { useState, useTransition, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Send, 
@@ -15,19 +15,9 @@ import {
 } from 'lucide-react';
 import NavBar from "@/components/LandingPage/NavBar";
 import { useToast } from "@/hooks/use-toast";
-import { useCollection, collection } from "@/supabase";
 import TurnstileWidget from "@/components/contact/turnstile-widget";
+import { FEEDBACK_POLL_MS, fetchFeedbackWall, type PublicFeedbackItem } from "@/lib/public/feedback-wall";
 import { Button } from "@/components/ui/button";
-
-interface FeedbackItem {
-  id: string;
-  name: string;
-  email: string;
-  message: string;
-  rating?: number;
-  type: 'comment' | 'review' | 'inquiry';
-  created_at: string;
-}
 
 const formVariants = {
   hidden: { opacity: 0, y: 30 },
@@ -76,22 +66,40 @@ export default function ContactPage() {
   const [hoveredStar, setHoveredStar] = useState<number | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   const handleTurnstile = useCallback((token: string | null) => {
     setTurnstileToken(token ?? '');
   }, []);
 
-  // Real-time Database feed
-  // Public wall reads a view without the email column; feedback.email is not readable.
-  const feedbackCollectionRef = useMemo(() => collection(null, 'feedback_public'), []);
-  const { data: feedbackData, isLoading, error } = useCollection<FeedbackItem>(feedbackCollectionRef);
+  const [feedbackData, setFeedbackData] = useState<PublicFeedbackItem[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [wallRefresh, setWallRefresh] = useState(0);
 
-  // Sorting feedback to show latest first
-  const sortedFeedback = useMemo(() => {
-    if (!feedbackData) return [];
-    return [...feedbackData].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [feedbackData]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const rows = await fetchFeedbackWall();
+        if (cancelled) return;
+        setFeedbackData(rows);
+        setError(false);
+      } catch (err) {
+        console.error("Feedback wall failed:", err);
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
+    load();
+    const timer = window.setInterval(load, FEEDBACK_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [wallRefresh]);
 
   // Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,6 +109,15 @@ export default function ContactPage() {
         variant: "destructive",
         title: "Incomplete Form",
         description: "Please fill in all fields before submitting."
+      });
+      return;
+    }
+
+    if (!turnstileConfigured) {
+      toast({
+        variant: "destructive",
+        title: "Feedback unavailable",
+        description: "Feedback is unavailable right now."
       });
       return;
     }
@@ -135,10 +152,10 @@ export default function ContactPage() {
             : (payload.error || 'Submission failed.');
           throw new Error(description);
         }
-        window.dispatchEvent(new CustomEvent('supabase-write', { detail: { table: 'feedback_public' } }));
 
         setIsSuccess(true);
         setTurnstileToken('');
+        setWallRefresh((count) => count + 1);
         toast({
           title: "Feedback Submitted!",
           description: "Thank you. Your message was submitted."
@@ -171,7 +188,7 @@ export default function ContactPage() {
         type === 'review' ? `Rating: ${rating} Stars\n` : ''
       }\nMessage:\n${message || '[No message typed yet]'}\n\nSent from SignPen Contact Page.`
     );
-    window.open(`mailto:support@signpen.com?subject=${emailSubject}&body=${emailBody}`, '_blank');
+    window.open(`mailto:support@signpen.xyz?subject=${emailSubject}&body=${emailBody}`, '_blank');
   };
 
   // Helper to color type tags
@@ -363,7 +380,7 @@ export default function ContactPage() {
                   <Button 
                     type="submit" 
                     size="lg"
-                    disabled={isPending || !turnstileToken}
+                    disabled={isPending || !turnstileConfigured || !turnstileToken}
                     className="flex-1 bg-white text-black hover:bg-zinc-200 transition-colors py-3 font-semibold rounded-xl text-sm shadow-md"
                   >
                     {isPending ? 'Posting...' : 'Post to Live Wall'}
@@ -391,8 +408,8 @@ export default function ContactPage() {
             {/* Email Channels Card */}
             <motion.div 
               className="bg-zinc-900/40 border border-zinc-800/50 backdrop-blur-md p-6 rounded-2xl shadow-xl"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
               <h2 className="text-xl font-bold font-headline mb-4 flex items-center gap-2">
@@ -445,7 +462,7 @@ export default function ContactPage() {
                 </h2>
                 <div className="flex items-center gap-1.5 text-xs text-zinc-400">
                   <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  Real-time
+                  Every 30s
                 </div>
               </div>
 
@@ -466,14 +483,14 @@ export default function ContactPage() {
                       </div>
                     ))}
                   </div>
-                ) : error ? (
+                ) : error && !feedbackData ? (
                   <div className="flex flex-col items-center justify-center h-full text-center p-4 space-y-2">
                     <AlertTriangle className="h-8 w-8 text-yellow-500" />
                     <p className="text-xs text-zinc-400">
-                      Failed to fetch live feed. RLS policies or tables may not be created in Supabase yet.
+                      The feedback wall is unavailable right now.
                     </p>
                   </div>
-                ) : sortedFeedback.length === 0 ? (
+                ) : !feedbackData || feedbackData.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center p-4">
                     <MessageSquare className="h-8 w-8 text-zinc-600 mb-2" />
                     <p className="text-sm font-semibold text-zinc-400">No feedback yet</p>
@@ -481,7 +498,7 @@ export default function ContactPage() {
                   </div>
                 ) : (
                   <AnimatePresence initial={false}>
-                    {sortedFeedback.map((item) => (
+                    {feedbackData.map((item) => (
                       <motion.div
                         key={item.id}
                         variants={cardVariants}
@@ -493,11 +510,11 @@ export default function ContactPage() {
                         {/* Header details */}
                         <div className="flex items-center gap-2.5 mb-2">
                           {/* initials avatar */}
-                          <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${getAvatarColor(item.name)}`}>
-                            {item.name.charAt(0).toUpperCase()}
+                          <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold ${getAvatarColor(item.first_name || "?")}`}>
+                            {(item.first_name || "?").charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-white truncate max-w-[120px]">{item.name}</p>
+                            <p className="text-sm font-semibold text-white truncate max-w-[120px]">{item.first_name || "Someone"}</p>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full inline-block mt-0.5 ${getTypeBadgeStyles(item.type)}`}>
                               {item.type}
                             </span>

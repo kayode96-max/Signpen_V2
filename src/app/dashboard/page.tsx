@@ -11,8 +11,11 @@ import {
   collection,
   query,
   doc,
-  setDocumentNonBlocking
+  setDocumentNonBlocking,
+  supabase,
 } from '@/supabase';
+import { Switch } from '@/components/ui/switch';
+import { HIDE_UPDATE_FAILED_COPY, patchHiddenByOwner } from '@/lib/public/signature-writes';
 import { Loader2, Image as ImageIcon, FileText, Download, Sparkles, X, ArrowRight, Pencil, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -58,6 +61,9 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isDownloading, setIsDownloading] = useState(false);
   const [hoveredSig, setHoveredSig] = useState<{ sig: ExistingSignature, x: number, y: number } | null>(null);
+  const [picked, setPicked] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [hiddenOverrides, setHiddenOverrides] = useState<Record<string, boolean>>({});
+  const hideRequest = useRef<Set<string>>(new Set());
   const [showBanner, setShowBanner] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('hide_customization_banner') !== 'true';
@@ -129,6 +135,11 @@ export default function DashboardPage() {
     }
   }, [user, student, isUserLoading, isStudentLoading, studentDocRef]);
 
+  // Owner session only. useCollection reads `signatures` through the signed-in
+  // Supabase client (the owner's JWT), uncached, with select('*'). That includes
+  // hidden_by_owner rows and private notes. Do not switch this to the public
+  // board route or the public signatures read: those omit hidden rows, so a
+  // hidden signature could never be un-hidden.
   const signaturesQuery = useMemoFirebase(
     () =>
       student
@@ -139,6 +150,48 @@ export default function DashboardPage() {
 
   const { data: signatures, isLoading: areSignaturesLoading } =
     useCollection<Signature>(signaturesQuery);
+
+  useEffect(() => {
+    setHiddenOverrides((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const id of Object.keys(next)) {
+        const row = signatures?.find((signature) => signature.id === id);
+        if (row && Boolean(row.hidden_by_owner) === next[id]) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [signatures]);
+
+  const hiddenFor = useCallback((signature: Signature) => {
+    return hiddenOverrides[signature.id] ?? Boolean(signature.hidden_by_owner);
+  }, [hiddenOverrides]);
+
+  const toggleHidden = useCallback(async (signature: Signature) => {
+    if (hideRequest.current.has(signature.id)) return;
+    const nextHidden = !hiddenFor(signature);
+    hideRequest.current.add(signature.id);
+    setHiddenOverrides((current) => ({ ...current, [signature.id]: nextHidden }));
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error('missing session');
+      const result = await patchHiddenByOwner(signature.id, nextHidden, token);
+      if (!result.ok) throw new Error('patch failed');
+    } catch {
+      setHiddenOverrides((current) => {
+        const reverted = { ...current };
+        delete reverted[signature.id];
+        return reverted;
+      });
+      toast({ variant: 'destructive', title: HIDE_UPDATE_FAILED_COPY });
+    } finally {
+      hideRequest.current.delete(signature.id);
+    }
+  }, [hiddenFor, toast]);
 
   const handleDownloadImage = () => {
     const dataUrl = boardRef.current?.getScreenshot();
@@ -264,11 +317,15 @@ export default function DashboardPage() {
           <TShirtBoard
             ref={boardRef}
             existingSignatures={(signatures || []).map((s): ExistingSignature => ({
+              id: s.id,
               signatureImageUrl: s.signatureImageUrl,
               position: s.position,
               name: s.signatoryName,
               note: s.signatoryNote,
             }))}
+            onSignatureTap={(sig, x, y) => {
+              if (sig.id) setPicked({ id: sig.id, x, y });
+            }}
             onHoverSignature={(sig: any, x: number, y: number) => {
               if (sig) {
                 setHoveredSig({ sig, x, y });
@@ -315,6 +372,38 @@ export default function DashboardPage() {
           </DropdownMenu>
         </div>
       </div>
+
+      {picked && (() => {
+        const signature = (signatures || []).find((row) => row.id === picked.id);
+        if (!signature) return null;
+        const hidden = hiddenFor(signature);
+        return (
+          <div
+            className="fixed z-50 bg-white/95 text-black p-3.5 rounded-xl shadow-2xl max-w-[260px] border border-black/5"
+            style={{ left: picked.x, top: picked.y, transform: 'translate(-50%, calc(-100% - 16px))' }}
+          >
+            <div className="font-bold text-[15px] leading-tight">{signature.signatoryName}</div>
+            {signature.signatoryNote && (
+              <div className="text-sm text-gray-700 mt-2 leading-snug break-words">{signature.signatoryNote}</div>
+            )}
+            <label className="mt-3 flex items-center justify-between gap-3 text-sm">
+              <span>{hidden ? 'Hidden from visitors' : 'Hide from visitors'}</span>
+              <Switch
+                checked={hidden}
+                onCheckedChange={() => void toggleHidden(signature)}
+                aria-label={hidden ? 'Unhide signature' : 'Hide signature'}
+              />
+            </label>
+            <button
+              type="button"
+              className="mt-2 text-xs font-medium text-black/60 underline"
+              onClick={() => setPicked(null)}
+            >
+              Close
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Tooltip for Hovered Signature */}
       {hoveredSig && hoveredSig.sig.name && (
