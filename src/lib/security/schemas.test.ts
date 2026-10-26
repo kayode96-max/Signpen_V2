@@ -84,12 +84,20 @@ describe('feedbackRequestSchema', () => {
     turnstileToken: 'token-from-widget',
   };
 
-  it('requires a rating only for reviews and always requires a Turnstile token', () => {
+  it('requires a rating only for reviews and treats a blank Turnstile token as absent', () => {
     expect(feedbackRequestSchema.safeParse({ ...base, type: 'review' }).success).toBe(false);
     expect(feedbackRequestSchema.parse({ ...base, type: 'review', rating: 5 }).rating).toBe(5);
     expect(feedbackRequestSchema.safeParse({ ...base, type: 'comment', rating: 4 }).success).toBe(false);
     expect(feedbackRequestSchema.parse({ ...base, type: 'inquiry' }).type).toBe('inquiry');
-    expect(feedbackRequestSchema.safeParse({ ...base, type: 'comment', turnstileToken: '  ' }).success).toBe(false);
+    expect(feedbackRequestSchema.parse({ ...base, type: 'comment', turnstileToken: '  ' }).turnstileToken).toBeUndefined();
+    expect(
+      feedbackRequestSchema.parse({
+        name: base.name,
+        email: base.email,
+        message: base.message,
+        type: 'comment',
+      }).turnstileToken
+    ).toBeUndefined();
   });
 
   it('rejects an invalid email and an oversized message', () => {

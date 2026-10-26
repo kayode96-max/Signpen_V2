@@ -58,7 +58,9 @@ export async function GET(req: NextRequest) {
  * Anonymous sessions may sign. Inserts run as the service role through
  * public.insert_signature. That function allows 100 signatures per hashed IP
  * per board per rolling hour and then raises challenge_required. A verified
- * Turnstile token is the only way past that cap. There is no cross-board cap.
+ * Turnstile token is the only way past that cap, and only when both Turnstile
+ * keys are set. With Turnstile off the same cap is 429 rate_limited plus
+ * Retry-After. There is no cross-board cap.
  * The raw IP is passed to insert_signature, which stores only a salted SHA-256
  * (private.hash_ip). The salt never leaves the database.
  */
@@ -91,7 +93,10 @@ export async function POST(req: NextRequest) {
     if (result.status === 201 && result.boardId) {
       revalidateTag(boardCacheTag(result.boardId));
     }
-    return NextResponse.json(result.body, { status: result.status });
+    return NextResponse.json(result.body, {
+      status: result.status,
+      headers: result.headers,
+    });
   } catch (err) {
     if (err instanceof MissingServerConfigError) {
       return NextResponse.json({ error: err.message }, { status: 503 });

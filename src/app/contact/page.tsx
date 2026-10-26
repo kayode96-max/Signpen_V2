@@ -76,6 +76,7 @@ export default function ContactPage() {
   const [hoveredStar, setHoveredStar] = useState<number | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? '';
   const handleTurnstile = useCallback((token: string | null) => {
     setTurnstileToken(token ?? '');
   }, []);
@@ -105,7 +106,7 @@ export default function ContactPage() {
       return;
     }
 
-    if (!turnstileToken) {
+    if (turnstileSiteKey && !turnstileToken) {
       toast({
         variant: "destructive",
         title: "Check required",
@@ -125,7 +126,7 @@ export default function ContactPage() {
             message: message.trim(),
             type,
             rating: type === 'review' ? rating : null,
-            turnstileToken,
+            ...(turnstileToken ? { turnstileToken } : {}),
           }),
         });
         const payload = await response.json().catch(() => ({ error: 'Submission failed.' }));
@@ -356,14 +357,14 @@ export default function ContactPage() {
                   />
                 </div>
 
-                <TurnstileWidget onToken={handleTurnstile} />
+                {turnstileSiteKey ? <TurnstileWidget onToken={handleTurnstile} /> : null}
 
                 {/* Submission Options */}
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <Button 
                     type="submit" 
                     size="lg"
-                    disabled={isPending || !turnstileToken}
+                    disabled={isPending || (Boolean(turnstileSiteKey) && !turnstileToken)}
                     className="flex-1 bg-white text-black hover:bg-zinc-200 transition-colors py-3 font-semibold rounded-xl text-sm shadow-md"
                   >
                     {isPending ? 'Posting...' : 'Post to Live Wall'}

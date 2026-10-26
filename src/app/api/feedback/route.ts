@@ -3,15 +3,17 @@ import { getClientIp } from '@/lib/security/client-ip';
 import { feedbackRequestSchema, firstZodError } from '@/lib/security/schemas';
 import { createServiceClient, MissingServerConfigError } from '@/lib/server/supabase';
 import { verifyTurnstileToken } from '@/lib/server/turnstile';
+import { isTurnstileEnabled, warnTurnstileDisabledOnce } from '@/lib/turnstile';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Public feedback insert. Turnstile runs first. insert_feedback then allows
- * 5 posts per hashed IP per rolling hour and returns retry_after when the
- * cap is already used. Postgres stores only a salted hash of the IP. Email stays
- * on the base table. The public wall reads feedback_public.
+ * Public feedback insert. Turnstile runs first only when both keys are set.
+ * insert_feedback then allows 5 posts per hashed IP per rolling hour and
+ * returns retry_after when the cap is already used. Postgres stores only a
+ * salted hash of the IP. Email stays on the base table. The public wall
+ * reads feedback_public.
  */
 export async function POST(req: NextRequest) {
   let raw: unknown;
@@ -27,9 +29,17 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = getClientIp(req.headers);
-  const verdict = await verifyTurnstileToken(parsed.data.turnstileToken, ip);
-  if (!verdict.ok) {
-    return NextResponse.json({ error: verdict.error }, { status: verdict.status });
+  if (!isTurnstileEnabled()) {
+    warnTurnstileDisabledOnce();
+  } else {
+    const token = parsed.data.turnstileToken;
+    if (!token) {
+      return NextResponse.json({ error: 'Turnstile token is required.' }, { status: 400 });
+    }
+    const verdict = await verifyTurnstileToken(token, ip);
+    if (!verdict.ok) {
+      return NextResponse.json({ error: verdict.error }, { status: verdict.status });
+    }
   }
 
   if (!ip) {

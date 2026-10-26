@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  TURNSTILE_DISABLED_WARNING,
+  isTurnstileEnabled,
+  resetTurnstileDisabledWarningForTests,
+} from '@/lib/turnstile';
 import {
   CHALLENGE_REQUIRED,
   CHALLENGE_UNAVAILABLE,
+  RATE_LIMITED,
+  SIGNATURE_RATE_LIMIT_RETRY_AFTER_SECONDS,
   createSignature,
   mapSignatureWriteError,
   type SignatureWriteArgs,
@@ -46,6 +53,12 @@ describe('mapSignatureWriteError', () => {
 });
 
 describe('createSignature', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('TURNSTILE_SECRET_KEY', 'turnstile-secret');
+    vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', 'turnstile-site');
+  });
+
   it('passes the IP only to the service-role write and stores the signer id', async () => {
     const { calls, write } = harness({ ok: true, id: 'sig-1' });
     const response = await createSignature(body, {
@@ -89,7 +102,7 @@ describe('createSignature', () => {
     expect((await createSignature(body, { userId: 'u', ip: IP, write: duplicate.write })).status).toBe(409);
   });
 
-  it('asks for a Turnstile token once the hourly board cap is reached', async () => {
+  it('when both keys are set, asks for a Turnstile token once the hourly board cap is reached', async () => {
     const limited = harness({ ok: false, code: 'P0004', message: 'challenge_required' });
     const verifyTurnstile = vi.fn(async (): Promise<TurnstileCheck> => 'valid');
     const response = await createSignature(body, {
@@ -106,7 +119,16 @@ describe('createSignature', () => {
     expect(verifyTurnstile).not.toHaveBeenCalled();
   });
 
-  it('rejects an invalid token without writing a second time', async () => {
+  it('when both keys are set, rejects a missing or invalid token without writing a second time', async () => {
+    const missing = harness({ ok: false, code: 'P0004', message: 'challenge_required' });
+    const missingResponse = await createSignature(body, {
+      userId: 'u',
+      ip: IP,
+      write: missing.write,
+      verifyTurnstile: async () => 'valid',
+    });
+    expect(missingResponse).toEqual({ status: 429, body: { error: CHALLENGE_REQUIRED } });
+    expect(missing.calls).toHaveLength(1);
     const limited = harness({ ok: false, code: 'P0004', message: 'challenge_required' });
     const verifyTurnstile = vi.fn(async (): Promise<TurnstileCheck> => 'invalid');
     const response = await createSignature(
@@ -169,5 +191,98 @@ describe('createSignature', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].p_challenge_passed).toBe(false);
     expect(verifyTurnstile).not.toHaveBeenCalled();
+  });
+
+  describe('when Turnstile is disabled', () => {
+    beforeEach(() => {
+      vi.stubEnv('TURNSTILE_SECRET_KEY', '');
+      vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', '');
+      resetTurnstileDisabledWarningForTests();
+    });
+
+    it('signs with no token and does not verify one', async () => {
+      const verifyTurnstile = vi.fn(async (): Promise<TurnstileCheck> => 'invalid');
+      const { calls, write } = harness({ ok: true, id: 'sig-open' });
+      const response = await createSignature(body, {
+        userId: 'u',
+        ip: IP,
+        write,
+        verifyTurnstile,
+      });
+
+      expect(response).toEqual({
+        status: 201,
+        body: { signature_id: 'sig-open' },
+        boardId: body.studentId,
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].p_challenge_passed).toBe(false);
+      expect(verifyTurnstile).not.toHaveBeenCalled();
+    });
+
+    it('returns 429 rate_limited with Retry-After past the hourly cap', async () => {
+      const limited = harness({ ok: false, code: 'P0004', message: 'challenge_required' });
+      const verifyTurnstile = vi.fn(async (): Promise<TurnstileCheck> => 'valid');
+      const response = await createSignature(
+        { ...body, turnstileToken: 'ignored-token' },
+        { userId: 'u', ip: IP, write: limited.write, verifyTurnstile }
+      );
+
+      expect(response).toEqual({
+        status: 429,
+        body: { error: RATE_LIMITED },
+        headers: { 'Retry-After': String(SIGNATURE_RATE_LIMIT_RETRY_AFTER_SECONDS) },
+      });
+      expect(response.body).not.toEqual({ error: CHALLENGE_REQUIRED });
+      expect(verifyTurnstile).not.toHaveBeenCalled();
+      expect(limited.calls).toHaveLength(1);
+      expect(limited.calls[0].p_challenge_passed).toBe(false);
+      expect(JSON.stringify(response)).not.toContain('ignored-token');
+    });
+
+    it('treats a single key as disabled', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const pairs = [
+        ['only-secret', ''],
+        ['', 'only-site'],
+        ['   ', 'site'],
+        ['secret', '   '],
+      ] as const;
+
+      for (const [secret, site] of pairs) {
+        vi.stubEnv('TURNSTILE_SECRET_KEY', secret);
+        vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', site);
+        resetTurnstileDisabledWarningForTests();
+        warn.mockClear();
+        expect(isTurnstileEnabled()).toBe(false);
+
+        const limited = harness({ ok: false, code: 'P0004', message: 'challenge_required' });
+        const response = await createSignature(
+          { ...body, turnstileToken: 'ignored-token' },
+          { userId: 'u', ip: IP, write: limited.write, verifyTurnstile: async () => 'valid' }
+        );
+
+        expect(response.status).toBe(429);
+        expect(response.body).toEqual({ error: RATE_LIMITED });
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('only-secret');
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('only-site');
+        if (secret.trim()) expect(JSON.stringify(response)).not.toContain(secret.trim());
+        if (site.trim()) expect(JSON.stringify(response)).not.toContain(site.trim());
+      }
+
+      warn.mockRestore();
+    });
+
+    it('logs the disabled warning once per process', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { write } = harness({ ok: true, id: 'sig-1' });
+      await createSignature(body, { userId: 'u', ip: IP, write });
+      await createSignature(body, { userId: 'u', ip: IP, write });
+
+      const disabled = warn.mock.calls.filter((call) => call[0] === TURNSTILE_DISABLED_WARNING);
+      expect(disabled).toHaveLength(1);
+      expect(JSON.stringify(warn.mock.calls)).not.toMatch(/turnstile-secret|turnstile-site/);
+      warn.mockRestore();
+    });
   });
 });

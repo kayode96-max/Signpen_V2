@@ -71,6 +71,7 @@ export default function PublicSignOutPage() {
   const [onlyGraduate, setOnlyGraduate] = useState(false);
   const [challengeRequired, setChallengeRequired] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? '';
 
   // 3-D modal
   const [showModal, setShowModal] = useState(false);
@@ -120,6 +121,10 @@ export default function PublicSignOutPage() {
     try {
       const res = await fetch(`/api/signatures/challenge?studentId=${encodeURIComponent(studentId)}`);
       const data = await res.json().catch(() => ({}));
+      if (data.enabled === false) {
+        setChallengeRequired(false);
+        return;
+      }
       setChallengeRequired(data.challenge_required === true);
     } catch {
       setChallengeRequired(false);
@@ -137,7 +142,7 @@ export default function PublicSignOutPage() {
       toast({ variant: "destructive", title: "Missing Information", description: "Please fill in your name and note." });
       return;
     }
-    if (challengeRequired && !turnstileToken) {
+    if (challengeRequired && turnstileSiteKey && !turnstileToken) {
       toast({
         variant: "destructive",
         title: "Check required",
@@ -178,6 +183,9 @@ export default function PublicSignOutPage() {
       if (!response.ok) {
         const payload = await response.json().catch(() => ({ error: "Submission failed." }));
         if (response.status === 409) setHasAlreadySigned(true);
+        if (response.status === 429 && payload.error === "rate_limited") {
+          throw new Error("Too many signatures from this network in the last hour. Please try again later.");
+        }
         if (response.status === 429 && payload.error === "challenge_required") {
           setChallengeRequired(true);
           setTurnstileToken(null);
@@ -361,12 +369,9 @@ export default function PublicSignOutPage() {
               />
               <span>Only the graduate sees this</span>
             </label>
-            {challengeRequired && (
-              <TurnstileWidget
-                onToken={setTurnstileToken}
-                unavailableMessage="Signing from this network needs the spam check, and NEXT_PUBLIC_TURNSTILE_SITE_KEY is not configured."
-              />
-            )}
+            {challengeRequired && turnstileSiteKey ? (
+              <TurnstileWidget onToken={setTurnstileToken} />
+            ) : null}
           </div>
           <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-white/5 flex-shrink-0 flex flex-col sm:flex-row justify-end">
             <DialogClose asChild>

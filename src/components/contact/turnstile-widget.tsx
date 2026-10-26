@@ -25,18 +25,17 @@ declare global {
  * Cloudflare Turnstile. The site key is public (NEXT_PUBLIC_TURNSTILE_SITE_KEY).
  * The secret (TURNSTILE_SECRET_KEY) is checked only on the server, by
  * /api/feedback and by /api/signatures once an IP is over the hourly board cap.
+ * No site key means no widget and no Cloudflare script.
  */
 export default function TurnstileWidget({
   onToken,
-  unavailableMessage = 'Feedback posting is unavailable until NEXT_PUBLIC_TURNSTILE_SITE_KEY is configured.',
 }: {
   onToken: (token: string | null) => void;
-  unavailableMessage?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? '';
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.turnstile) {
@@ -63,9 +62,7 @@ export default function TurnstileWidget({
   }, [ready, siteKey, onToken]);
 
   if (!siteKey) {
-    return (
-      <p className="text-sm text-yellow-400">{unavailableMessage}</p>
-    );
+    return null;
   }
 
   return (

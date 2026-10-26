@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getClientIp } from '@/lib/security/client-ip';
 import { privateNoStore } from '@/lib/server/private-no-store';
 import { createServiceClient, MissingServerConfigError } from '@/lib/server/supabase';
+import { isTurnstileEnabled, warnTurnstileDisabledOnce } from '@/lib/turnstile';
 
 export const runtime = 'nodejs';
 // Varies by the caller. Never statically generated, ISR-cached, or shared via s-maxage.
@@ -12,11 +13,17 @@ const studentIdSchema = z.string().uuid();
 
 /**
  * Tells the signing page whether this IP must solve Turnstile before drawing.
- * The body is only { challenge_required }. The count and the hashed IP stay
- * in Postgres (signature_challenge_required hashes the address itself).
- * Every status is private and uncached.
+ * With Turnstile off the body is { enabled: false } and no lookup runs.
+ * With Turnstile on the body is only { challenge_required }. The count and
+ * the hashed IP stay in Postgres (signature_challenge_required hashes the
+ * address itself). Every status is private and uncached.
  */
 export async function GET(req: NextRequest) {
+  if (!isTurnstileEnabled()) {
+    warnTurnstileDisabledOnce();
+    return privateNoStore(NextResponse.json({ enabled: false }));
+  }
+
   const parsed = studentIdSchema.safeParse(req.nextUrl.searchParams.get('studentId'));
   if (!parsed.success) {
     return privateNoStore(NextResponse.json({ error: 'studentId must be a UUID.' }, { status: 400 }));

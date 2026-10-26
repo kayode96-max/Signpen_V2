@@ -73,7 +73,8 @@ export const signatureRequestSchema = z.object({
   /**
    * Sent only after GET /api/signatures/challenge reports challenge_required.
    * A blank value is treated as absent. The server checks it with
-   * TURNSTILE_SECRET_KEY once the hourly board cap is reached.
+   * TURNSTILE_SECRET_KEY once the hourly board cap is reached, and only when
+   * both Turnstile keys are set.
    */
   turnstileToken: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -134,7 +135,10 @@ export const feedbackRequestSchema = z
       .max(FEEDBACK_MESSAGE_MAX, `Message must be ${FEEDBACK_MESSAGE_MAX} characters or fewer.`),
     type: z.enum(['comment', 'review', 'inquiry']),
     rating: z.number().int().min(1).max(5).nullable().optional(),
-    turnstileToken: z.string().trim().min(1, 'Turnstile token is required.').max(2048),
+    turnstileToken: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z.string().trim().min(1).max(2048).optional()
+    ),
   })
   .superRefine((value, ctx) => {
     if (value.type === 'review' && (value.rating === null || value.rating === undefined)) {

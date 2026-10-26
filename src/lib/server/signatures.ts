@@ -1,4 +1,6 @@
+import { SIGNATURE_IP_WINDOW_HOURS } from '@/lib/security/limits';
 import { firstZodError, signatureRequestSchema } from '@/lib/security/schemas';
+import { isTurnstileEnabled, warnTurnstileDisabledOnce } from '@/lib/turnstile';
 
 export interface SignatureWriteArgs {
   p_student_id: string;
@@ -36,10 +38,16 @@ export interface ApiBody {
   body: { error?: string; signature_id?: string };
   /** Present on success so the route can invalidate the board cache. Not returned to the client. */
   boardId?: string;
+  /** Hop-by-hop headers the route copies onto the response. */
+  headers?: Record<string, string>;
 }
 
 export const CHALLENGE_REQUIRED = 'challenge_required';
 export const CHALLENGE_UNAVAILABLE = 'challenge_unavailable';
+export const RATE_LIMITED = 'rate_limited';
+
+/** Rolling hour, in seconds. The SQL window does not return a remaining time. */
+export const SIGNATURE_RATE_LIMIT_RETRY_AFTER_SECONDS = SIGNATURE_IP_WINDOW_HOURS * 60 * 60;
 
 export function isChallengeRequired(error: { code?: string; message?: string }): boolean {
   return (error.message ?? '').includes(CHALLENGE_REQUIRED);
@@ -48,7 +56,8 @@ export function isChallengeRequired(error: { code?: string; message?: string }):
 /**
  * Maps insert_signature failures to HTTP statuses.
  * Anything unrecognized is a 500. Callers must not ignore the error.
- * The hourly cap is not a hard block: it is challenge_required.
+ * The hourly cap is not a hard block while Turnstile is enabled: it is
+ * challenge_required. With Turnstile off it is rate_limited.
  */
 export function mapSignatureWriteError(error: {
   code?: string;
@@ -78,6 +87,7 @@ export async function createSignature(
   raw: unknown,
   ctx: SignatureWriteContext
 ): Promise<ApiBody> {
+  warnTurnstileDisabledOnce();
   const parsed = signatureRequestSchema.safeParse(raw);
   if (!parsed.success) {
     return { status: 400, body: { error: firstZodError(parsed.error) } };
@@ -112,6 +122,14 @@ export async function createSignature(
   if (!isChallengeRequired(first)) {
     const mapped = mapSignatureWriteError(first);
     return { status: mapped.status, body: { error: mapped.error } };
+  }
+
+  if (!isTurnstileEnabled()) {
+    return {
+      status: 429,
+      body: { error: RATE_LIMITED },
+      headers: { 'Retry-After': String(SIGNATURE_RATE_LIMIT_RETRY_AFTER_SECONDS) },
+    };
   }
 
   const token = parsed.data.turnstileToken;

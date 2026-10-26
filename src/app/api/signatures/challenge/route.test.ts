@@ -1,5 +1,9 @@
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  TURNSTILE_DISABLED_WARNING,
+  resetTurnstileDisabledWarningForTests,
+} from '@/lib/turnstile';
 
 const createServiceClient = vi.hoisted(() => vi.fn());
 
@@ -26,6 +30,8 @@ describe('GET /api/signatures/challenge', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv('TURNSTILE_SECRET_KEY', 'secret');
+    vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', 'site');
     rpc.mockResolvedValue({ data: true, error: null });
     createServiceClient.mockReturnValue({ rpc });
   });
@@ -64,6 +70,32 @@ describe('GET /api/signatures/challenge', () => {
   it('does not answer when the visitor IP is missing', async () => {
     expect((await get(STUDENT, null)).status).toBe(400);
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('returns enabled false and logs once when either key is missing', async () => {
+    resetTurnstileDisabledWarningForTests();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubEnv('TURNSTILE_SECRET_KEY', '');
+    vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', '');
+
+    const off = await get(null, null);
+    expect(off.status).toBe(200);
+    expect(off.headers.get('cache-control')).toBe('private, no-store');
+    expect(off.headers.get('cache-control')).not.toMatch(/s-maxage/i);
+    expect(await off.json()).toEqual({ enabled: false });
+
+    await get();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(warn.mock.calls.filter((call) => call[0] === TURNSTILE_DISABLED_WARNING)).toHaveLength(1);
+
+    vi.stubEnv('TURNSTILE_SECRET_KEY', 'only-secret');
+    vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', '');
+    const oneKey = await get();
+    expect(oneKey.status).toBe(200);
+    expect(await oneKey.json()).toEqual({ enabled: false });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('only-secret');
+    warn.mockRestore();
   });
 
   it('returns 500 without leaking details when the lookup fails', async () => {

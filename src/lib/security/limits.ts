@@ -7,13 +7,14 @@
 
 /**
  * Hashed IP signatures on one board in a rolling hour.
- * Past this, the signer must pass Turnstile. There is no cross-board cap.
+ * Past this, Turnstile can raise the cap when both keys are set.
+ * With Turnstile off the API returns rate_limited. There is no cross-board cap.
  */
 export const SIGNATURES_PER_IP_PER_BOARD_PER_HOUR = 100;
 
 export const SIGNATURE_IP_WINDOW_HOURS = 1;
 
-/** Feedback posts from one hashed IP in a rolling hour, after Turnstile. */
+/** Feedback posts from one hashed IP in a rolling hour. Turnstile runs first only when both keys are set. */
 export const FEEDBACK_PER_IP_PER_HOUR = 5;
 
 /** Hashed IP rows are deleted after this many days. */

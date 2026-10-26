@@ -44,6 +44,7 @@ describe('POST /api/feedback', () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv('TURNSTILE_SECRET_KEY', 'secret');
+    vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', 'site');
     verifyTurnstileToken.mockResolvedValue({ ok: true });
     rpc.mockResolvedValue({ data: { limited: false, id: 'fb-1' }, error: null });
     createServiceClient.mockReturnValue({ rpc });
@@ -59,6 +60,31 @@ describe('POST /api/feedback', () => {
       p_ip: IP,
       p_rating: null,
     }));
+  });
+
+  it('skips verification when only one key is set', async () => {
+    vi.stubEnv('TURNSTILE_SECRET_KEY', 'only-secret');
+    vi.stubEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY', '');
+    const response = await post();
+    expect(response.status).toBe(201);
+    expect(verifyTurnstileToken).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalled();
+  });
+
+  it('rejects a missing token when both keys are set', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/feedback', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': IP,
+        },
+        body: JSON.stringify({ ...payload, turnstileToken: '  ' }),
+      })
+    );
+    expect(response.status).toBe(400);
+    expect(verifyTurnstileToken).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('does not write when Turnstile fails', async () => {

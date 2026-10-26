@@ -56,6 +56,20 @@ describe('POST /api/signatures cache', () => {
     expect(revalidateTag).toHaveBeenCalledWith(`board:${BOARD}`);
   });
 
+  it('forwards Retry-After when the hourly cap is a hard limit', async () => {
+    createSignature.mockResolvedValue({
+      status: 429,
+      body: { error: 'rate_limited' },
+      headers: { 'Retry-After': '3600' },
+    });
+
+    const response = await post();
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: 'rate_limited' });
+    expect(response.headers.get('retry-after')).toBe('3600');
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
   it('does not invalidate the board when the insert is refused', async () => {
     createSignature.mockResolvedValue({
       status: 429,
