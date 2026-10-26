@@ -20,17 +20,14 @@ export default async function StudentPage({ params }: StudentPageProps) {
     notFound();
   }
 
-  // Temporary existence check. A later PR replaces this with
-  // supabase.rpc('get_student_public', { p_id: studentId }) and must ship
-  // together with the backend RLS migration. Select only id.
-  // A query error is not a missing row: fall through so a network blip
-  // does not hide a real board.
+  // students is owner-only after the RLS lockdown, so the public existence
+  // check goes through get_student_public. That RPC returns id, name, photo,
+  // and page settings — never email. A query error is not a missing row:
+  // fall through so a network blip does not hide a real board.
   let missing = false;
   try {
     const { data, error } = await supabase
-      .from("students")
-      .select("id")
-      .eq("id", studentId)
+      .rpc("get_student_public", { p_id: studentId })
       .maybeSingle();
 
     if (error) {
