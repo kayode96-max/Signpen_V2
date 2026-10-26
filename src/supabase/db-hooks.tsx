@@ -26,6 +26,10 @@ export function query(ref: MockRef, ...constraints: any[]): MockRef {
 export function parsePath(path: string) {
   const parts = path.split('/').filter(Boolean);
   
+  // Public board profile: students is owner-only, so read the public fields via RPC.
+  if (parts.length === 2 && parts[0] === 'publicStudents') {
+    return { table: 'students', id: parts[1], keyField: 'id', rpc: 'get_student_public' as string | undefined };
+  }
   if (parts.length === 2 && parts[0] === 'students') {
     return { table: 'students', id: parts[1], keyField: 'id' };
   }
@@ -35,35 +39,8 @@ export function parsePath(path: string) {
   if (parts[0] === 'students' && parts[2] === 'thankYouCards') {
     return { table: 'thank_you_cards', id: parts[3], studentId: parts[1], keyField: 'id' };
   }
-  if (parts[0] === 'students' && parts[2] === 'signedIps') {
-    return { table: 'signed_ips', ipAddress: parts[3], studentId: parts[1], keyField: 'studentId' };
-  }
   
   return { table: parts[0] || '', id: parts[1], keyField: 'id' };
-}
-
-export async function getDoc(ref: MockRef) {
-  const parsed = parsePath(ref.path);
-  
-  let q = supabase.from(parsed.table).select('*');
-  
-  if (parsed.table === 'signed_ips') {
-    q = q.eq('studentId', parsed.studentId).eq('ipAddress', parsed.ipAddress);
-  } else {
-    q = q.eq(parsed.keyField || 'id', parsed.id);
-  }
-  
-  const { data, error } = await q.maybeSingle();
-  if (error) {
-    console.error("Error in getDoc:", error);
-    throw error;
-  }
-  
-  return {
-    exists: () => !!data,
-    data: () => data,
-    id: parsed.id || '',
-  };
 }
 
 export function useDoc<T = any>(
@@ -84,14 +61,17 @@ export function useDoc<T = any>(
     }
 
     const parsed = parsePath(docRef.path);
+    const rpcName = 'rpc' in parsed ? parsed.rpc : undefined;
 
     const fetchDoc = async () => {
       try {
-        const { data: row, error: fetchErr } = await supabase
-          .from(parsed.table)
-          .select('*')
-          .eq(parsed.keyField || 'id', parsed.id)
-          .maybeSingle();
+        const { data: row, error: fetchErr } = rpcName
+          ? await supabase.rpc(rpcName, { p_id: parsed.id }).maybeSingle()
+          : await supabase
+              .from(parsed.table)
+              .select('*')
+              .eq(parsed.keyField || 'id', parsed.id)
+              .maybeSingle();
 
         if (fetchErr) throw fetchErr;
         
@@ -119,6 +99,15 @@ export function useDoc<T = any>(
 
     if (typeof window !== 'undefined') {
       window.addEventListener('supabase-write', handleLocalWrite);
+    }
+
+    // RPC-backed public docs have no realtime feed (students rows are not published).
+    if (rpcName) {
+      return () => {
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('supabase-write', handleLocalWrite);
+        }
+      };
     }
 
     const channel = supabase

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import NavBar from "@/components/LandingPage/NavBar";
 import { useToast } from "@/hooks/use-toast";
-import { useCollection, collection, addDocumentNonBlocking } from "@/supabase";
+import { useCollection, collection, supabase } from "@/supabase";
 import { Button } from "@/components/ui/button";
 
 interface FeedbackItem {
@@ -76,7 +76,8 @@ export default function ContactPage() {
   const [isSuccess, setIsSuccess] = useState(false);
 
   // Real-time Database feed
-  const feedbackCollectionRef = useMemo(() => collection(null, 'feedback'), []);
+  // Public wall reads a view without the email column; feedback.email is not readable.
+  const feedbackCollectionRef = useMemo(() => collection(null, 'feedback_public'), []);
   const { data: feedbackData, isLoading, error } = useCollection<FeedbackItem>(feedbackCollectionRef);
 
   // Sorting feedback to show latest first
@@ -101,7 +102,8 @@ export default function ContactPage() {
 
     startTransition(async () => {
       try {
-        await addDocumentNonBlocking(feedbackCollectionRef, {
+        // Insert without reading the row back (email is write-only for the public).
+        const { error: insertError } = await supabase.from('feedback').insert({
           name: name.trim(),
           email: email.trim(),
           message: message.trim(),
@@ -109,6 +111,8 @@ export default function ContactPage() {
           rating: type === 'review' ? rating : null,
           created_at: new Date().toISOString()
         });
+        if (insertError) throw insertError;
+        window.dispatchEvent(new CustomEvent('supabase-write', { detail: { table: 'feedback_public' } }));
 
         setIsSuccess(true);
         toast({
