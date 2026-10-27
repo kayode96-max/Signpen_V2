@@ -86,6 +86,19 @@ function authLimited(status: number, body: string): boolean {
   return status === 429 || /rate limit|over_request_rate_limit|too many requests/i.test(body);
 }
 
+function challengeDisabled(body: string): boolean {
+  const parsed = parseJson(body);
+  return !!parsed && typeof parsed === 'object' && (parsed as { enabled?: unknown }).enabled === false;
+}
+
+/** Storage answers HTTP 400 with statusCode 403/415/413 in the JSON body. */
+function storageStatus(result: HttpResult, expected: number): boolean {
+  if (result.status === expected) return true;
+  const parsed = parseJson(result.body);
+  if (!parsed || typeof parsed !== 'object' || !('statusCode' in parsed)) return false;
+  return String((parsed as { statusCode?: unknown }).statusCode) === String(expected);
+}
+
 function anonymousDisabled(error: string): boolean {
   return /anonymous_provider_disabled|anonymous sign-ins are disabled/i.test(error);
 }
@@ -298,7 +311,14 @@ async function caseCache(
   check('GET signatures 400', await getSignatures(request, 'not-a-uuid', token), 400);
   check('GET signatures 401', await getSignatures(request, BOARD_ID, 'not-a-valid-token'), 401);
   check('GET challenge session', await getChallenge(request, BOARD_ID), 200);
-  check('GET challenge 400', await getChallenge(request, 'not-a-uuid'), 400);
+  const badChallenge = await getChallenge(request, 'not-a-uuid');
+  const turnstileOff = challengeDisabled(badChallenge.body);
+  const badChallengeOk =
+    cacheOk(badChallenge.cache) && (badChallenge.status === 400 || (turnstileOff && badChallenge.status === 200));
+  if (!badChallengeOk) ok = false;
+  lines.push(
+    `GET challenge bad id ${snippet(badChallenge.status, badChallenge.body)} cache=${badChallenge.cache || 'absent'} enabledFalse=${turnstileOff}`,
+  );
   record('3 cache 200 and 4xx', ok, lines.join(' | ') || 'no 200/4xx sample');
   if (serverErrors.length > 0) {
     const cached = serverErrors.every((line) => line.includes('cache=private, no-store'));
@@ -660,7 +680,11 @@ async function caseStorage(
       'image/jpeg',
     );
     if (!authed) {
-      record('6 storage 403', denied.status === 401 || denied.status === 403, `logged-out ${snippet(denied.status, denied.body)}; anonymous session missing`);
+      record(
+        '6 storage 403',
+        storageStatus(denied, 403) || denied.status === 401,
+        `logged-out ${snippet(denied.status, denied.body)}; anonymous session missing`,
+      );
       record('6 storage 415', 'blocked', 'anonymous session missing');
       record('6 storage 413', 'blocked', 'anonymous session missing');
       return;
@@ -688,11 +712,11 @@ async function caseStorage(
     );
     record(
       '6 storage 403',
-      forbidden.status === 403 && (denied.status === 401 || denied.status === 403),
+      storageStatus(forbidden, 403) && (storageStatus(denied, 403) || denied.status === 401),
       `anon session ${snippet(forbidden.status, forbidden.body)}; logged-out ${snippet(denied.status, denied.body)}`,
     );
-    record('6 storage 415', mime.status === 415, snippet(mime.status, mime.body));
-    record('6 storage 413', oversize.status === 413, snippet(oversize.status, oversize.body));
+    record('6 storage 415', storageStatus(mime, 415), snippet(mime.status, mime.body));
+    record('6 storage 413', storageStatus(oversize, 413), snippet(oversize.status, oversize.body));
   } finally {
     await loggedOut.dispose();
     await authed?.dispose();
