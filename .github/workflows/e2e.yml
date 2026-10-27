@@ -34,7 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      BASE_URL: ${{ github.event.inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      # Pinned for one preview run of PR #26 head b69eee4. Restored immediately
+      # after the deployment_status job for this commit is in progress.
+      BASE_URL: https://signpen-v2-jcrqiy2l6-abdullahi-usmans-projects-58e45ce7.vercel.app
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -175,9 +177,9 @@ jobs:
           # x-vercel-protection-bypass and x-vercel-set-bypass-cookie: true.
           # Do not echo the secret. Trace stays off while the headers are set.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          E2E_SPEC: ${{ github.event.inputs.spec }}
-          E2E_HOTFIX: ${{ github.event.inputs.spec == 'e2e/hotfix-24.spec.ts' && '1' || '' }}
-          E2E_QA26: ${{ github.event.inputs.spec == 'e2e/qa-26.spec.ts' && '1' || '' }}
+          E2E_SPEC: e2e/qa-26.spec.ts
+          E2E_HOTFIX: ''
+          E2E_QA26: '1'
         run: |
           if [ -n "$E2E_SPEC" ]; then
             case "$E2E_SPEC" in
