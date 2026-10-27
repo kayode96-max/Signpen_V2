@@ -26,6 +26,7 @@ create policy "Allow owner write access for students" on public.students
 
 -- signatures
 drop trigger if exists signatures_guard on public.signatures;
+drop function if exists public.tg_signatures_guard();
 drop policy if exists signatures_select on public.signatures;
 drop policy if exists "Allow public read access for signatures" on public.signatures;
 drop policy if exists "Allow public insert access for signatures" on public.signatures;
