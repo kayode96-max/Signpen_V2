@@ -32,7 +32,10 @@ drop policy if exists "Allow public read access for signatures" on public.signat
 drop policy if exists "Allow public insert access for signatures" on public.signatures;
 drop policy if exists "Allow owner update/delete access for signatures" on public.signatures;
 create policy "Allow public read access for signatures" on public.signatures
-  for select using (true);
+  for select using (
+    coalesce(private_by_signer, false) = false
+    and coalesce(hidden_by_owner, false) = false
+  );
 create policy "Allow public insert access for signatures" on public.signatures
   for insert with check (true);
 create policy "Allow owner update/delete access for signatures" on public.signatures
