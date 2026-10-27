@@ -1,3 +1,4 @@
+/// <reference types="next/image-types/global" />
 import type { StaticImageData } from 'next/image';
 import data from './placeholder-images.json';
 import interactiveCanvas from '@/assets/interactive.webp';

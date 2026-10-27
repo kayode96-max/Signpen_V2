@@ -5,7 +5,7 @@ import { collectConsole, horizontalOverflow } from './support';
 /**
  * QA for PR #17 after it was rebased on #26. UI signing writes a signature,
  * so the file runs only when E2E_QA17=1. Other smoke runs skip it.
- * `boardUrl` is not on this branch; src/lib/public/board-url.test.mjs stays skipped.
+ * `boardUrl` is not on this branch; src/lib/public/board-url.test.ts stays skipped.
  */
 
 const BOARD_ID = process.env.TEST_BOARD_ID?.trim() || '512025e9-9b28-40a8-8322-8a01711aa4bc';

@@ -9,7 +9,9 @@
  *  • Composites signature images onto the shirt texture via an offscreen canvas.
  *  • Exposes `onShirtClick(uv)` so parent components can show a signature dialog.
  *  • Exposes `addSignature(canvas, uv)` so the parent can bake a drawn signature.
- *  • Exposes `clearAll()` and `undoLast()` for toolbar buttons.
+ *    A new placement replaces this signer's in-progress one only when accepted.
+ *  • Exposes `clearAll()` and `undoLast()` for the current signer's placements.
+ *    Signatures already on the shirt are left in place.
  *  • Exposes `getScreenshot()` → data-URL for download / save.
  */
 
@@ -23,10 +25,21 @@ import React, {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {
+  clearSessionPlacements,
+  commitSessionPlacement,
+  texturePointFromUv,
+  undoSessionPlacement,
+  type ShirtPlacement,
+} from './placement-history';
 
 // ─── Public API exposed via ref ────────────────────────────────────────────
 export interface TShirtCanvasRef {
-  /** Bake a signature canvas image onto the shirt at the given UV position */
+  /**
+   * Bake this signer's signature at the given UV.
+   * Replaces their in-progress placement when the spot is free.
+   * Returns false and leaves the shirt unchanged when it is not.
+   */
   addSignature: (
     sigCanvas: HTMLCanvasElement,
     uv: { x: number; y: number },
@@ -38,9 +51,9 @@ export interface TShirtCanvasRef {
     position: { x: number; y: number },
     size?: { width: number; height: number }
   ) => Promise<void>;
-  /** Remove the last item placed on the shirt */
+  /** Remove the current signer's latest placement. Existing signatures stay. */
   undoLast: () => boolean;
-  /** Remove all items placed on the shirt */
+  /** Remove the current signer's placements. Existing signatures stay. */
   clearAll: () => void;
   /** Returns a PNG data-URL of the current canvas */
   getScreenshot: () => string;
@@ -99,19 +112,14 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     const rafRef = useRef<number>(0);
     const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
 
-    // Compositing state kept in refs
+    // Compositing state kept in refs.
+    // `existing` entries are other people's signatures. `session` entries are
+    // the signature the current signer is placing. Undo/Clear only drop session.
     const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const compositeCtxRef = useRef<CanvasRenderingContext2D | null>(null);
     const compositeTextureRef = useRef<THREE.CanvasTexture | null>(null);
     const originalTextureRef = useRef<THREE.Texture | null>(null);
-    const placedItemsRef = useRef<
-      Array<{
-        canvas: HTMLCanvasElement;
-        uv: { x: number; y: number };
-        size: { width: number; height: number };
-      }>
-    >([]);
-    const signedAreasRef = useRef<Array<{ x: number; y: number }>>([]);
+    const placedItemsRef = useRef<Array<ShirtPlacement<HTMLCanvasElement>>>([]);
     const isLoadedRef = useRef(false);
     // Track which existing sig URLs have already been baked in
     const loadedUrlsRef = useRef<Set<string>>(new Set());
@@ -155,15 +163,14 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     // ── Public API ─────────────────────────────────────────────────────────
     useImperativeHandle(ref, () => ({
       addSignature(sigCanvas, uv, size = { width: 280, height: 120 }) {
-        // Check distance from existing signatures
-        const px = uv.x * TEX_W;
-        const py = (1 - uv.y) * TEX_H;
-        for (const area of signedAreasRef.current) {
-          const d = Math.hypot(px - area.x, py - area.y);
-          if (d < SIG_RADIUS) return false;
-        }
-        placedItemsRef.current.push({ canvas: sigCanvas, uv, size });
-        signedAreasRef.current.push({ x: px, y: py });
+        const area = texturePointFromUv(uv, TEX_W, TEX_H);
+        const result = commitSessionPlacement(
+          placedItemsRef.current,
+          { kind: 'session', canvas: sigCanvas, uv, size, area },
+          SIG_RADIUS
+        );
+        if (!result.accepted) return false;
+        placedItemsRef.current = result.placements;
         redrawComposite();
         return true;
       },
@@ -183,10 +190,13 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
             offscreen.height = img.naturalHeight;
             const ctx = offscreen.getContext('2d')!;
             ctx.drawImage(img, 0, 0);
-            const px = uv.x * TEX_W;
-            const py = (1 - uv.y) * TEX_H;
-            placedItemsRef.current.push({ canvas: offscreen, uv, size });
-            signedAreasRef.current.push({ x: px, y: py });
+            placedItemsRef.current.push({
+              kind: 'existing',
+              canvas: offscreen,
+              uv,
+              size,
+              area: texturePointFromUv(uv, TEX_W, TEX_H),
+            });
             redrawComposite();
             resolve();
           };
@@ -196,16 +206,17 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       },
 
       undoLast() {
-        if (placedItemsRef.current.length === 0) return false;
-        placedItemsRef.current.pop();
-        signedAreasRef.current.pop();
+        const result = undoSessionPlacement(placedItemsRef.current);
+        if (!result.removed) return false;
+        placedItemsRef.current = result.placements;
         redrawComposite();
         return true;
       },
 
       clearAll() {
-        placedItemsRef.current = [];
-        signedAreasRef.current = [];
+        const result = clearSessionPlacements(placedItemsRef.current);
+        if (!result.removed) return;
+        placedItemsRef.current = result.placements;
         redrawComposite();
       },
 
@@ -242,10 +253,13 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
               offscreen.height = img.naturalHeight;
               const ctx = offscreen.getContext('2d')!;
               ctx.drawImage(img, 0, 0);
-              const px = uv.x * TEX_W;
-              const py = (1 - uv.y) * TEX_H;
-              placedItemsRef.current.push({ canvas: offscreen, uv, size: { width: 340, height: 140 } });
-              signedAreasRef.current.push({ x: px, y: py });
+              placedItemsRef.current.push({
+                kind: 'existing',
+                canvas: offscreen,
+                uv,
+                size: { width: 340, height: 140 },
+                area: texturePointFromUv(uv, TEX_W, TEX_H),
+              });
               redrawComposite();
               resolve();
             };
@@ -422,10 +436,13 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
                         offscreen.height = img.naturalHeight;
                         const ctx = offscreen.getContext('2d')!;
                         ctx.drawImage(img, 0, 0);
-                        const px = uv.x * TEX_W;
-                        const py = (1 - uv.y) * TEX_H;
-                        placedItemsRef.current.push({ canvas: offscreen, uv, size: { width: 340, height: 140 } });
-                        signedAreasRef.current.push({ x: px, y: py });
+                        placedItemsRef.current.push({
+                          kind: 'existing',
+                          canvas: offscreen,
+                          uv,
+                          size: { width: 340, height: 140 },
+                          area: texturePointFromUv(uv, TEX_W, TEX_H),
+                        });
                         redrawComposite();
                         resolve();
                       };
