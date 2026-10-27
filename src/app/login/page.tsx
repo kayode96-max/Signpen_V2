@@ -3,7 +3,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@/supabase";
+import { signOutAnonymousSession, useUser } from "@/supabase";
 import AuthForm from "@/components/auth/auth-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
@@ -16,12 +16,15 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!isUserLoading && user) {
-      router.push("/dashboard");
+    if (isUserLoading) return;
+    if (user?.isAnonymous) {
+      void signOutAnonymousSession();
+      return;
     }
+    if (user) router.push("/dashboard");
   }, [isUserLoading, user, router]);
 
-  if (isUserLoading || user) {
+  if (isUserLoading || (user && !user.isAnonymous)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-secondary">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { useUser } from "@/supabase";
+import { planDashboardStudents } from "@/lib/security/access";
+import { signOutAnonymousSession, useUser } from "@/supabase";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import NavBar from "@/components/LandingPage/NavBar";
@@ -14,13 +15,22 @@ export default function DashboardLayout({
   const { user, isUserLoading } = useUser();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!isUserLoading && !user) {
-      router.push("/login");
-    }
-  }, [isUserLoading, user, router]);
+  const plan = planDashboardStudents({
+    user: user ? { id: user.uid, isAnonymous: user.isAnonymous } : null,
+    authReady: !isUserLoading,
+    studentReady: false,
+    studentExists: false,
+  });
 
-  if (isUserLoading || !user) {
+  useEffect(() => {
+    if (!plan.redirectToLogin) return;
+    // An anonymous signer session is not a dashboard login. Drop it so the
+    // page cannot upsert a students row for that uid.
+    if (plan.signOutAnonymous) void signOutAnonymousSession();
+    router.replace("/login");
+  }, [plan.redirectToLogin, plan.signOutAnonymous, router]);
+
+  if (isUserLoading || !user || user.isAnonymous) {
     return (
       <div className="flex items-center justify-center h-screen bg-secondary">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import ThankYouDialog from "./thank-you-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Info, MessageSquare } from "lucide-react";
-import { useDoc, useCollection, doc, collection, query, signInAnonymously, initializeFirebase } from "@/supabase";
+import { useDoc, useCollection, doc, collection, query, signInAnonymously, initializeFirebase, supabase } from "@/supabase";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
@@ -17,6 +17,7 @@ import {
   DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import InstructionDialog from "./instruction-dialog";
+import TurnstileWidget from "@/components/contact/turnstile-widget";
 import dynamic from "next/dynamic";
 import type { ExistingSignature } from "@/components/3d/TShirtCanvas";
 import type { SignaturePlacementPayload } from "@/components/3d/TShirtSigningModal";
@@ -67,6 +68,10 @@ export default function PublicSignOutPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [sigName, setSigName] = useState("");
   const [sigNote, setSigNote] = useState("");
+  const [onlyGraduate, setOnlyGraduate] = useState(false);
+  const [challengeRequired, setChallengeRequired] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? '';
 
   // 3-D modal
   const [showModal, setShowModal] = useState(false);
@@ -77,8 +82,14 @@ export default function PublicSignOutPage() {
     const checkIp = async () => {
       setIsCheckingIp(true);
       try {
-        // The API checks the caller's IP. The browser never queries signing history.
-        const res = await fetch(`/api/signatures?studentId=${encodeURIComponent(studentId)}`);
+        // One signature per device session. A first visit has no session yet,
+        // so there is nothing to check. Shared Wi-Fi does not block signing.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+        const res = await fetch(`/api/signatures?studentId=${encodeURIComponent(studentId)}`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
         if (res.ok) {
           const { alreadySigned } = await res.json();
           if (alreadySigned) setHasAlreadySigned(true);
@@ -106,14 +117,37 @@ export default function PublicSignOutPage() {
     return () => document.documentElement.classList.remove("dark");
   }, []);
 
+  const loadChallenge = async () => {
+    try {
+      const res = await fetch(`/api/signatures/challenge?studentId=${encodeURIComponent(studentId)}`);
+      const data = await res.json().catch(() => ({}));
+      if (data.enabled === false) {
+        setChallengeRequired(false);
+        return;
+      }
+      setChallengeRequired(data.challenge_required === true);
+    } catch {
+      setChallengeRequired(false);
+    }
+  };
+
   const handleOpenInfo = () => {
     if (hasAlreadySigned || isCheckingIp) return;
     setInfoOpen(true);
+    void loadChallenge();
   };
 
   const handleOpenModal = () => {
     if (!sigName.trim() || !sigNote.trim()) {
       toast({ variant: "destructive", title: "Missing Information", description: "Please fill in your name and note." });
+      return;
+    }
+    if (challengeRequired && turnstileSiteKey && !turnstileToken) {
+      toast({
+        variant: "destructive",
+        title: "Check required",
+        description: "Complete the spam check before signing.",
+      });
       return;
     }
     setInfoOpen(false);
@@ -141,16 +175,30 @@ export default function PublicSignOutPage() {
           signatoryName: sigName,
           signatoryNote: sigNote,
           position: payload.position,
+          privateBySigner: onlyGraduate,
+          ...(turnstileToken ? { turnstileToken } : {}),
         }),
       });
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({ error: "Submission failed." }));
+        if (response.status === 409) setHasAlreadySigned(true);
+        if (response.status === 429 && payload.error === "rate_limited") {
+          throw new Error("Too many signatures from this network in the last hour. Please try again later.");
+        }
+        if (response.status === 429 && payload.error === "challenge_required") {
+          setChallengeRequired(true);
+          setTurnstileToken(null);
+          setShowModal(false);
+          setInfoOpen(true);
+          throw new Error("Complete the spam check to keep signing from this network.");
+        }
         throw new Error(payload.error || "Submission failed.");
       }
 
       setSigName("");
       setSigNote("");
+      setOnlyGraduate(false);
       setHasAlreadySigned(true);
       setShowModal(false);
       setShowThankYou(true);
@@ -297,6 +345,7 @@ export default function PublicSignOutPage() {
               <Input 
                 placeholder="Jane Doe" 
                 value={sigName} 
+                maxLength={80}
                 onChange={(e) => setSigName(e.target.value)} 
                 className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
               />
@@ -306,10 +355,23 @@ export default function PublicSignOutPage() {
               <Input 
                 placeholder="Wishing you all the best!" 
                 value={sigNote} 
+                maxLength={1000}
                 onChange={(e) => setSigNote(e.target.value)} 
                 className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
               />
             </div>
+            <label className="flex items-start gap-3 text-sm text-white/70">
+              <input
+                type="checkbox"
+                checked={onlyGraduate}
+                onChange={(e) => setOnlyGraduate(e.target.checked)}
+                className="mt-1 h-4 w-4 accent-white"
+              />
+              <span>Only the graduate sees this</span>
+            </label>
+            {challengeRequired && turnstileSiteKey ? (
+              <TurnstileWidget onToken={setTurnstileToken} />
+            ) : null}
           </div>
           <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-white/5 flex-shrink-0 flex flex-col sm:flex-row justify-end">
             <DialogClose asChild>

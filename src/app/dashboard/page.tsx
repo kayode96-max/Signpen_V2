@@ -33,6 +33,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { planDashboardStudents } from '@/lib/security/access';
 import type { Signature, Student } from '@/lib/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -100,34 +101,38 @@ export default function DashboardPage() {
   }, [user]);
 
   useEffect(() => {
-    if (isUserLoading || isStudentLoading) return;
-    if (user && !student && studentDocRef) {
-      const signupName = typeof window !== 'undefined' ? localStorage.getItem('signup_name') : null;
-      const finalName = signupName || user.displayName || user.email?.split('@')[0] || 'Student';
+    const plan = planDashboardStudents({
+      user: user ? { id: user.uid, isAnonymous: user.isAnonymous } : null,
+      authReady: !isUserLoading,
+      studentReady: !isStudentLoading && !studentError,
+      studentExists: Boolean(student),
+    });
+    if (!plan.ensureOwnRow || !user || user.isAnonymous || !studentDocRef) return;
+    const signupName = typeof window !== 'undefined' ? localStorage.getItem('signup_name') : null;
+    const finalName = signupName || user.displayName || user.email?.split('@')[0] || 'Student';
 
-      const defaultStudent: Student = {
-        id: user.uid,
-        name: finalName,
-        email: user.email || '',
-        profilePhotoUrl: user.photoURL || '',
-        pageSettings: {
-          theme: 'light',
-          pageHeading: `${finalName}'s Sign-Off`,
-          pageSubheading: `Sign My Final Year Board 🎓✨`,
-          backgroundImageUrl: '',
-        },
-        popupMessageConfig: {
-          title: 'Thank You So Much ❤️',
-          message: 'Your message means the world to me. Thank you for being a part of my journey!',
-        },
-      };
-      setDocumentNonBlocking(studentDocRef, defaultStudent, { merge: false });
+    const defaultStudent: Student = {
+      id: user.uid,
+      name: finalName,
+      email: user.email || '',
+      profilePhotoUrl: user.photoURL || '',
+      pageSettings: {
+        theme: 'light',
+        pageHeading: `${finalName}'s Sign-Off`,
+        pageSubheading: `Sign My Final Year Board 🎓✨`,
+        backgroundImageUrl: '',
+      },
+      popupMessageConfig: {
+        title: 'Thank You So Much ❤️',
+        message: 'Your message means the world to me. Thank you for being a part of my journey!',
+      },
+    };
+    setDocumentNonBlocking(studentDocRef, defaultStudent, { merge: false });
 
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('signup_name');
-      }
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('signup_name');
     }
-  }, [user, student, isUserLoading, isStudentLoading, studentDocRef]);
+  }, [user, student, studentError, isUserLoading, isStudentLoading, studentDocRef]);
 
   const signaturesQuery = useMemoFirebase(
     () =>

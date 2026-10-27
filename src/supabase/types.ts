@@ -4,4 +4,6 @@ export interface User {
   displayName: string | null;
   photoURL: string | null;
   providerData: { providerId: string }[];
+  /** Supabase anonymous signer. Not a board owner. */
+  isAnonymous: boolean;
 }

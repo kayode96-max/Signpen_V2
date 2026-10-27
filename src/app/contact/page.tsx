@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition, useMemo } from 'react';
+import React, { useState, useTransition, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Send, 
@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import NavBar from "@/components/LandingPage/NavBar";
 import { useToast } from "@/hooks/use-toast";
-import { useCollection, collection, supabase } from "@/supabase";
+import { useCollection, collection } from "@/supabase";
+import TurnstileWidget from "@/components/contact/turnstile-widget";
 import { Button } from "@/components/ui/button";
 
 interface FeedbackItem {
@@ -74,6 +75,11 @@ export default function ContactPage() {
   const [rating, setRating] = useState(5);
   const [hoveredStar, setHoveredStar] = useState<number | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? '';
+  const handleTurnstile = useCallback((token: string | null) => {
+    setTurnstileToken(token ?? '');
+  }, []);
 
   // Real-time Database feed
   // Public wall reads a view without the email column; feedback.email is not readable.
@@ -100,24 +106,43 @@ export default function ContactPage() {
       return;
     }
 
+    if (turnstileSiteKey && !turnstileToken) {
+      toast({
+        variant: "destructive",
+        title: "Check required",
+        description: "Complete the spam check before posting."
+      });
+      return;
+    }
+
     startTransition(async () => {
       try {
-        // Insert without reading the row back (email is write-only for the public).
-        const { error: insertError } = await supabase.from('feedback').insert({
-          name: name.trim(),
-          email: email.trim(),
-          message: message.trim(),
-          type,
-          rating: type === 'review' ? rating : null,
-          created_at: new Date().toISOString()
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            message: message.trim(),
+            type,
+            rating: type === 'review' ? rating : null,
+            ...(turnstileToken ? { turnstileToken } : {}),
+          }),
         });
-        if (insertError) throw insertError;
+        const payload = await response.json().catch(() => ({ error: 'Submission failed.' }));
+        if (!response.ok) {
+          const description = payload.error === 'feedback_rate_limited'
+            ? 'Too many messages from this network. Please try again in a little while.'
+            : (payload.error || 'Submission failed.');
+          throw new Error(description);
+        }
         window.dispatchEvent(new CustomEvent('supabase-write', { detail: { table: 'feedback_public' } }));
 
         setIsSuccess(true);
+        setTurnstileToken('');
         toast({
           title: "Feedback Submitted!",
-          description: "Thank you! Your feedback has been posted in real-time."
+          description: "Thank you. Your message was submitted."
         });
 
         // Reset form
@@ -133,7 +158,7 @@ export default function ContactPage() {
         toast({
           variant: "destructive",
           title: "Submission Failed",
-          description: err.message || "Something went wrong. Please check your Supabase schema settings."
+          description: err.message || "Something went wrong. Please try again."
         });
       }
     });
@@ -224,7 +249,7 @@ export default function ContactPage() {
                 </div>
                 <h3 className="text-2xl font-bold font-headline text-white">Thank You!</h3>
                 <p className="text-zinc-400 max-w-sm">
-                  Your feedback has been submitted successfully and posted to the feedback wall in real-time.
+                  Your feedback has been submitted. Your email stays with the team.
                 </p>
               </motion.div>
             ) : (
@@ -332,12 +357,14 @@ export default function ContactPage() {
                   />
                 </div>
 
+                {turnstileSiteKey ? <TurnstileWidget onToken={handleTurnstile} /> : null}
+
                 {/* Submission Options */}
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <Button 
                     type="submit" 
                     size="lg"
-                    disabled={isPending}
+                    disabled={isPending || (Boolean(turnstileSiteKey) && !turnstileToken)}
                     className="flex-1 bg-white text-black hover:bg-zinc-200 transition-colors py-3 font-semibold rounded-xl text-sm shadow-md"
                   >
                     {isPending ? 'Posting...' : 'Post to Live Wall'}
