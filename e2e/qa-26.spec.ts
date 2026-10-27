@@ -10,8 +10,12 @@ import { expect, request as newRequest, test, type APIRequestContext, type Page 
 const PREVIEW_REF = 'vackuntdjgfmxhwxjuqt';
 const PRODUCTION_REF = 'avsguiynrukacgqnxwku';
 const BOARD_ID = process.env.TEST_BOARD_ID?.trim() || '512025e9-9b28-40a8-8322-8a01711aa4bc';
+const PROBE_IP = '203.0.113.26';
+const SPOOF_IP = '203.0.113.88';
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const OWNER_CREDENTIALS =
+  'Owner credentials are not available in CI. This workflow only receives VERCEL_AUTOMATION_BYPASS_SECRET. There is no preview owner email or password secret, so the owner session was not created.';
 
 const STUDENT_PUBLIC_KEYS = ['id', 'name', 'profilePhotoUrl', 'pageSettings', 'popupMessageConfig'] as const;
 
@@ -19,7 +23,13 @@ type Status = 'pass' | 'fail' | 'blocked';
 type CaseResult = { name: string; status: Status; evidence: string };
 type RecordCase = (name: string, ok: boolean | 'blocked', evidence: string) => void;
 type Session = { access_token: string; user?: { id?: string } };
-type HttpResult = { status: number; body: string; cache: string };
+type HttpResult = { status: number; body: string; cache: string; retryAfter: string };
+type SigningContext = {
+  tokenA: string | null;
+  userA: string;
+  signatureId: string;
+  tokenB: string | null;
+};
 
 function redact(value: string): string {
   return value
@@ -60,6 +70,21 @@ function signatureId(body: string): string {
   return typeof id === 'string' ? id : '';
 }
 
+function errorCode(body: string): string {
+  const parsed = parseJson(body);
+  if (!parsed || typeof parsed !== 'object' || !('error' in parsed)) return '';
+  const error = (parsed as { error?: unknown }).error;
+  return typeof error === 'string' ? error : '';
+}
+
+function emptySigning(): SigningContext {
+  return { tokenA: null, userA: '', signatureId: '', tokenB: null };
+}
+
+function authLimited(status: number, body: string): boolean {
+  return status === 429 || /rate limit|over_request_rate_limit|too many requests/i.test(body);
+}
+
 function anonymousDisabled(error: string): boolean {
   return /anonymous_provider_disabled|anonymous sign-ins are disabled/i.test(error);
 }
@@ -80,8 +105,8 @@ function refused(status: number, body: string): boolean {
 test.describe('PR 26 session signing', () => {
   test.skip(process.env.E2E_QA26 !== '1', 'E2E_QA26=1 runs this file against the preview Supabase only');
 
-  test('cases 1-5', async ({ page, request }) => {
-    test.setTimeout(240_000);
+  test('cases 1-6', async ({ page, request }) => {
+    test.setTimeout(720_000);
     const results: CaseResult[] = [];
     const record: RecordCase = (name, ok, evidence) => {
       const status: Status = ok === 'blocked' ? 'blocked' : ok ? 'pass' : 'fail';
@@ -112,10 +137,16 @@ test.describe('PR 26 session signing', () => {
       const second = first.session
         ? await anonymousSession(anon, discovered.supabaseUrl, discovered.anonKey)
         : { session: null, error: first.error };
-      await caseSigning(request, first, second, record);
+      const signing = await caseSigning(request, first, second, record);
       await caseCache(request, first.session?.access_token ?? null, record);
       await casePublicReads(anon, discovered.supabaseUrl, discovered.anonKey, first.session, record);
       await caseBoardPage(page, baseURL, record);
+      await caseReloadAndTurnstile(page, request, anon, discovered.supabaseUrl, baseURL, signing, record);
+      await caseIpIgnored(request, signing, record);
+      await caseNonOwnerMutations(request, signing, record);
+      await caseSentimentAndPages(page, request, baseURL, signing, record);
+      await caseStorage(discovered.supabaseUrl, discovered.anonKey, signing, record);
+      await caseRateLimit(request, anon, discovered.supabaseUrl, discovered.anonKey, record);
     } finally {
       await anon.dispose();
     }
@@ -133,7 +164,7 @@ async function caseSigning(
   first: { session: Session | null; error: string },
   second: { session: Session | null; error: string },
   record: RecordCase,
-): Promise<void> {
+): Promise<SigningContext> {
   const session = first.session;
   if (!session?.access_token || !session.user?.id) {
     const blocked = anonymousDisabled(first.error);
@@ -150,7 +181,7 @@ async function caseSigning(
     ]) {
       record(name, blocked ? 'blocked' : false, evidence);
     }
-    return;
+    return emptySigning();
   }
 
   const userA = session.user.id;
@@ -192,7 +223,7 @@ async function caseSigning(
     record('1 repeat POST 409', 'blocked', 'not attempted; service role refused the first POST');
     record('2 second session GET false then POST 201', 'blocked', createdLine);
     record('3 no cross-signer leakage', 'blocked', createdLine);
-    return;
+    return { tokenA: session.access_token, userA, signatureId: '', tokenB: null };
   }
   record('1 POST 201', created.status === 201 && createdId.length > 0, createdLine);
 
@@ -214,7 +245,7 @@ async function caseSigning(
       second.error || `second session missing or same user (${userB || 'none'})`,
     );
     record('3 no cross-signer leakage', false, 'second session unavailable');
-    return;
+    return { tokenA: session.access_token, userA, signatureId: createdId, tokenB: null };
   }
 
   const beforeB = await getSignatures(request, BOARD_ID, second.session.access_token);
@@ -236,6 +267,12 @@ async function caseSigning(
     !leaked && afterA.already === true && afterB.already === true && afterA.body.includes(userA) === false,
     `A after sign alreadySigned=${String(afterA.already)} body=${redact(afterA.body)}. B before sign alreadySigned=${String(beforeB.already)} body=${redact(beforeB.body)}. B after sign alreadySigned=${String(afterB.already)}`,
   );
+  return {
+    tokenA: session.access_token,
+    userA,
+    signatureId: createdId,
+    tokenB: second.session.access_token,
+  };
 }
 
 async function caseCache(
@@ -413,6 +450,397 @@ async function caseBoardPage(page: Page, baseURL: string, record: RecordCase): P
   );
 }
 
+async function caseReloadAndTurnstile(
+  page: Page,
+  request: APIRequestContext,
+  anon: APIRequestContext,
+  supabaseUrl: string,
+  baseURL: string,
+  signing: SigningContext,
+  record: RecordCase,
+): Promise<void> {
+  if (!signing.tokenA || !signing.signatureId) {
+    record('1 reload alreadySigned', 'blocked', 'no signature from the first session');
+    record('1 signature visible on reload', 'blocked', 'no signature from the first session');
+  } else {
+    const reloaded = await getSignatures(request, BOARD_ID, signing.tokenA);
+    record(
+      '1 reload alreadySigned',
+      reloaded.status === 200 && reloaded.already === true && cacheOk(reloaded.cache),
+      `anonUserId=${signing.userA} signatureId=${signing.signatureId} ${snippet(reloaded.status, reloaded.body)} cache=${reloaded.cache || 'absent'}`,
+    );
+    const listed = await anon.post(`${supabaseUrl}/rest/v1/rpc/signatures_public`, { data: { p_id: BOARD_ID } });
+    const listedBody = await listed.text();
+    const origin = new URL(baseURL).origin;
+    const response = await page.goto(new URL(`/${BOARD_ID}`, origin).href, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2000);
+    const pageText = await page.locator('body').innerText().catch(() => '');
+    const nameOnPage = /QA-26a-/.test(pageText);
+    const nameInPublic = listedBody.includes(signing.signatureId);
+    record(
+      '1 signature visible on reload',
+      (response?.status() ?? 0) === 200 && listed.status() === 200 && nameInPublic,
+      `page HTTP ${response?.status() ?? 0} publicHasId=${nameInPublic} nameOnPage=${nameOnPage} ${snippet(listed.status(), listedBody)}`,
+    );
+  }
+
+  const origin = new URL(baseURL).origin;
+  const contact = await page.goto(new URL('/contact', origin).href, { waitUntil: 'domcontentloaded' });
+  const contactWidget = await turnstilePresent(page);
+  const board = await page.goto(new URL(`/${BOARD_ID}`, origin).href, { waitUntil: 'domcontentloaded' });
+  const boardWidget = await turnstilePresent(page);
+  record(
+    'turnstile widget absent',
+    contactWidget === 0 && boardWidget === 0,
+    `contact HTTP ${contact?.status() ?? 0} widgets=${contactWidget}; board HTTP ${board?.status() ?? 0} widgets=${boardWidget}`,
+  );
+}
+
+async function caseIpIgnored(
+  request: APIRequestContext,
+  signing: SigningContext,
+  record: RecordCase,
+): Promise<void> {
+  if (!signing.tokenA) {
+    record('6 ip query and forwarded-for ignored', 'blocked', 'no session');
+    return;
+  }
+  const plain = await getSignatures(request, BOARD_ID, signing.tokenA);
+  const query = await request.get(
+    `/api/signatures?studentId=${encodeURIComponent(BOARD_ID)}&ip=${PROBE_IP}&p_ip=${PROBE_IP}`,
+    { headers: { authorization: `Bearer ${signing.tokenA}` } },
+  );
+  const queryBody = await query.text();
+  const spoof = await request.get(`/api/signatures?studentId=${encodeURIComponent(BOARD_ID)}`, {
+    headers: {
+      authorization: `Bearer ${signing.tokenA}`,
+      'x-forwarded-for': SPOOF_IP,
+      'x-real-ip': SPOOF_IP,
+    },
+  });
+  const spoofBody = await spoof.text();
+  const challenge = await request.get(
+    `/api/signatures/challenge?studentId=${encodeURIComponent(BOARD_ID)}&ip=${PROBE_IP}`,
+    { headers: { 'x-forwarded-for': SPOOF_IP, 'x-real-ip': SPOOF_IP } },
+  );
+  const challengeBody = await challenge.text();
+  const blobs = [plain.body, queryBody, spoofBody, challengeBody];
+  const leaked = blobs.some((body) => body.includes(PROBE_IP) || body.includes(SPOOF_IP));
+  const queryFlag = alreadySigned(queryBody);
+  const spoofFlag = alreadySigned(spoofBody);
+  const challengeCache = challenge.headers()['cache-control'] ?? '';
+  record(
+    '6 ip query and forwarded-for ignored',
+    !leaked &&
+      query.status() === plain.status &&
+      queryFlag === plain.already &&
+      spoof.status() === plain.status &&
+      spoofFlag === plain.already &&
+      challenge.status() < 500 &&
+      cacheOk(query.headers()['cache-control'] ?? '') &&
+      cacheOk(spoof.headers()['cache-control'] ?? '') &&
+      cacheOk(challengeCache),
+    `plain alreadySigned=${String(plain.already)}. query ${snippet(query.status(), queryBody)} cache=${query.headers()['cache-control'] || 'absent'}. spoof ${snippet(spoof.status(), spoofBody)} cache=${spoof.headers()['cache-control'] || 'absent'}. challenge ${snippet(challenge.status(), challengeBody)} cache=${challengeCache || 'absent'}`,
+  );
+}
+
+async function caseNonOwnerMutations(
+  request: APIRequestContext,
+  signing: SigningContext,
+  record: RecordCase,
+): Promise<void> {
+  record('4 owner hide and delete', 'blocked', OWNER_CREDENTIALS);
+  if (!signing.signatureId || !signing.tokenA || !signing.tokenB) {
+    record('4 anon cannot hide or delete', 'blocked', 'signer and second session were not both available');
+    return;
+  }
+  const noToken = await patchSignature(request, signing.signatureId, null, { hidden_by_owner: true });
+  const signerHide = await patchSignature(request, signing.signatureId, signing.tokenA, { hidden_by_owner: true });
+  const otherHide = await patchSignature(request, signing.signatureId, signing.tokenB, { hidden_by_owner: true });
+  const otherDelete = await deleteSignature(request, signing.signatureId, signing.tokenB);
+  const noTokenDelete = await deleteSignature(request, signing.signatureId, null);
+  const denied =
+    noToken.status === 401 &&
+    signerHide.status === 403 &&
+    otherHide.status === 403 &&
+    otherDelete.status === 403 &&
+    noTokenDelete.status === 401;
+  record(
+    '4 anon cannot hide or delete',
+    denied,
+    `PATCH no token ${snippet(noToken.status, noToken.body)}; signer hide ${snippet(signerHide.status, signerHide.body)}; other hide ${snippet(otherHide.status, otherHide.body)}; other DELETE ${snippet(otherDelete.status, otherDelete.body)}; DELETE no token ${snippet(noTokenDelete.status, noTokenDelete.body)}`,
+  );
+}
+
+async function caseSentimentAndPages(
+  page: Page,
+  request: APIRequestContext,
+  baseURL: string,
+  signing: SigningContext,
+  record: RecordCase,
+): Promise<void> {
+  const missing = await request.post('/api/sentiment-summary', {
+    headers: { 'content-type': 'application/json' },
+    data: { studentId: BOARD_ID },
+  });
+  const missingBody = await missing.text();
+  const anonCall = signing.tokenA
+    ? await request.post('/api/sentiment-summary', {
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${signing.tokenA}` },
+        data: { studentId: BOARD_ID },
+      })
+    : null;
+  const anonBody = anonCall ? await anonCall.text() : '';
+  const anonStatus = anonCall?.status() ?? 0;
+  const sawUnavailable = errorCode(missingBody) === 'summary_unavailable' || errorCode(anonBody) === 'summary_unavailable';
+  record(
+    '5 sentiment 503 summary_unavailable',
+    'blocked',
+    `${OWNER_CREDENTIALS} Missing token ${snippet(missing.status(), missingBody)}. Anonymous session HTTP ${anonStatus} ${redact(anonBody)}. summary_unavailable observed=${sawUnavailable}.`,
+  );
+
+  const origin = new URL(baseURL).origin;
+  const boardWatch = watchConsole(page);
+  const board = await page.goto(new URL(`/${BOARD_ID}`, origin).href, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  boardWatch.stop();
+  const boardStatus = board?.status() ?? 0;
+  const boardUrl = new URL(page.url());
+  record(
+    '5 board renders',
+    boardStatus === 200 && boardWatch.errors.length === 0 && boardUrl.pathname.toLowerCase() === `/${BOARD_ID}`.toLowerCase(),
+    `HTTP ${boardStatus} path=${boardUrl.pathname} console=${boardWatch.errors.join(' | ') || 'none'}`,
+  );
+
+  const dashWatch = watchConsole(page);
+  const dash = await page.goto(new URL('/dashboard', origin).href, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  dashWatch.stop();
+  const dashStatus = dash?.status() ?? 0;
+  const dashPath = new URL(page.url()).pathname;
+  record(
+    '5 dashboard renders',
+    dashStatus < 500 && dashWatch.errors.length === 0 && (dashPath === '/dashboard' || dashPath === '/login'),
+    `HTTP ${dashStatus} path=${dashPath} console=${dashWatch.errors.join(' | ') || 'none'}`,
+  );
+
+  const contactWatch = watchConsole(page);
+  const contact = await page.goto(new URL('/contact', origin).href, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  contactWatch.stop();
+  record(
+    '6 contact 200',
+    (contact?.status() ?? 0) === 200 && contactWatch.errors.length === 0,
+    `HTTP ${contact?.status() ?? 0} console=${contactWatch.errors.join(' | ') || 'none'}`,
+  );
+}
+
+async function caseStorage(
+  supabaseUrl: string,
+  anonKey: string,
+  signing: SigningContext,
+  record: RecordCase,
+): Promise<void> {
+  const loggedOut = await newRequest.newContext({
+    extraHTTPHeaders: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+  });
+  const authed = signing.tokenA
+    ? await newRequest.newContext({
+        extraHTTPHeaders: { apikey: anonKey, Authorization: `Bearer ${signing.tokenA}` },
+      })
+    : null;
+  try {
+    const folder = signing.userA || '00000000-0000-4000-8000-000000000026';
+    const denied = await storagePut(
+      loggedOut,
+      supabaseUrl,
+      `profile-photos/${folder}/qa-logged-out.jpg`,
+      tinyJpeg(),
+      'image/jpeg',
+    );
+    if (!authed) {
+      record('6 storage 403', denied.status === 401 || denied.status === 403, `logged-out ${snippet(denied.status, denied.body)}; anonymous session missing`);
+      record('6 storage 415', 'blocked', 'anonymous session missing');
+      record('6 storage 413', 'blocked', 'anonymous session missing');
+      return;
+    }
+    const forbidden = await storagePut(
+      authed,
+      supabaseUrl,
+      `profile-photos/${folder}/qa-anon.jpg`,
+      tinyJpeg(),
+      'image/jpeg',
+    );
+    const mime = await storagePut(
+      authed,
+      supabaseUrl,
+      `profile-photos/${folder}/qa-anon.pdf`,
+      Buffer.from('%PDF-1.1\n'),
+      'application/pdf',
+    );
+    const oversize = await storagePut(
+      authed,
+      supabaseUrl,
+      `profile-photos/${folder}/qa-anon-big.jpg`,
+      Buffer.alloc(5 * 1024 * 1024 + 1, 0),
+      'image/jpeg',
+    );
+    record(
+      '6 storage 403',
+      forbidden.status === 403 && (denied.status === 401 || denied.status === 403),
+      `anon session ${snippet(forbidden.status, forbidden.body)}; logged-out ${snippet(denied.status, denied.body)}`,
+    );
+    record('6 storage 415', mime.status === 415, snippet(mime.status, mime.body));
+    record('6 storage 413', oversize.status === 413, snippet(oversize.status, oversize.body));
+  } finally {
+    await loggedOut.dispose();
+    await authed?.dispose();
+  }
+}
+
+async function caseRateLimit(
+  request: APIRequestContext,
+  anon: APIRequestContext,
+  supabaseUrl: string,
+  anonKey: string,
+  record: RecordCase,
+): Promise<void> {
+  let created = 0;
+  let last = '';
+  for (let i = 0; i < 110; i += 1) {
+    const session = await anonymousSession(anon, supabaseUrl, anonKey);
+    if (!session.session?.access_token || !session.session.user?.id) {
+      const blocked = authLimited(0, session.error) || anonymousDisabled(session.error);
+      record(
+        '3 rate cap 429 rate_limited',
+        blocked ? 'blocked' : false,
+        `stopped after ${created} new signatures. ${session.error || 'anonymous sign-in returned no session'}`,
+      );
+      record('6 spoofed X-Forwarded-For still rate limited', 'blocked', 'rate cap was not reached');
+      return;
+    }
+    const posted = await postSignature(request, BOARD_ID, session.session.access_token, `QA26-rate-${i}`);
+    last = `created=${created} ${snippet(posted.status, posted.body)} retryAfter=${posted.retryAfter || 'absent'} code=${errorCode(posted.body) || 'none'}`;
+    if (posted.status === 201) {
+      created += 1;
+      if (created % 10 === 0) console.log(`[qa26] rate-cap progress created=${created}`);
+      continue;
+    }
+    if (posted.status === 429) {
+      const code = errorCode(posted.body);
+      record(
+        '3 rate cap 429 rate_limited',
+        code === 'rate_limited',
+        `${last}. Same runner IP. Turnstile token was not sent.`,
+      );
+      const spoof = await postSignature(request, BOARD_ID, session.session.access_token, `QA26-spoof-${i}`, {
+        'x-forwarded-for': SPOOF_IP,
+        'x-real-ip': SPOOF_IP,
+      });
+      record(
+        '6 spoofed X-Forwarded-For still rate limited',
+        spoof.status === 429 && errorCode(spoof.body) === 'rate_limited' && !spoof.body.includes(SPOOF_IP),
+        `same session after the cap, spoofed forwarded-for ${SPOOF_IP}. ${snippet(spoof.status, spoof.body)} code=${errorCode(spoof.body) || 'none'} retryAfter=${spoof.retryAfter || 'absent'}`,
+      );
+      return;
+    }
+    if (serviceKeyMissing(posted.status, posted.body) || authLimited(posted.status, posted.body)) {
+      record('3 rate cap 429 rate_limited', 'blocked', last);
+      record('6 spoofed X-Forwarded-For still rate limited', 'blocked', 'rate cap was not reached');
+      return;
+    }
+    record('3 rate cap 429 rate_limited', false, last);
+    record('6 spoofed X-Forwarded-For still rate limited', 'blocked', 'rate cap was not reached');
+    return;
+  }
+  record('3 rate cap 429 rate_limited', false, `no 429 after ${created} new signatures. ${last}`);
+  record('6 spoofed X-Forwarded-For still rate limited', 'blocked', 'rate cap was not reached');
+}
+
+async function patchSignature(
+  request: APIRequestContext,
+  id: string,
+  accessToken: string | null,
+  data: { hidden_by_owner: boolean },
+): Promise<HttpResult> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (accessToken !== null) headers.authorization = `Bearer ${accessToken}`;
+  const response = await request.patch(`/api/signatures/${id}`, { headers, data });
+  return {
+    status: response.status(),
+    body: await response.text(),
+    cache: response.headers()['cache-control'] ?? '',
+    retryAfter: response.headers()['retry-after'] ?? '',
+  };
+}
+
+async function deleteSignature(
+  request: APIRequestContext,
+  id: string,
+  accessToken: string | null,
+): Promise<HttpResult> {
+  const headers: Record<string, string> = {};
+  if (accessToken !== null) headers.authorization = `Bearer ${accessToken}`;
+  const response = await request.delete(`/api/signatures/${id}`, { headers });
+  return {
+    status: response.status(),
+    body: await response.text(),
+    cache: response.headers()['cache-control'] ?? '',
+    retryAfter: response.headers()['retry-after'] ?? '',
+  };
+}
+
+async function storagePut(
+  api: APIRequestContext,
+  supabaseUrl: string,
+  path: string,
+  body: Buffer,
+  contentType: string,
+): Promise<HttpResult> {
+  const response = await api.post(`${supabaseUrl}/storage/v1/object/signpen/${path}`, {
+    headers: { 'content-type': contentType, 'x-upsert': 'true' },
+    data: body,
+  });
+  return {
+    status: response.status(),
+    body: await response.text(),
+    cache: response.headers()['cache-control'] ?? '',
+    retryAfter: '',
+  };
+}
+
+function tinyJpeg(): Buffer {
+  return Buffer.from([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9,
+  ]);
+}
+
+async function turnstilePresent(page: Page): Promise<number> {
+  return page
+    .locator('iframe[src*="challenges.cloudflare.com"], .cf-turnstile, script[src*="challenges.cloudflare.com/turnstile"]')
+    .count();
+}
+
+function watchConsole(page: Page): { errors: string[]; stop: () => void } {
+  const errors: string[] = [];
+  const onConsole = (message: { type(): string; text(): string }) => {
+    if (message.type() === 'error') errors.push(redact(message.text()));
+  };
+  const onPageError = (error: Error) => {
+    errors.push(redact(error.message));
+  };
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+  return {
+    errors,
+    stop: () => {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+    },
+  };
+}
+
 async function discoverSupabase(
   page: Page,
   request: APIRequestContext,
@@ -488,8 +916,9 @@ async function postSignature(
   studentId: string,
   accessToken: string | null,
   signatoryName: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<HttpResult> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...(extraHeaders ?? {}) };
   if (accessToken !== null) headers.authorization = `Bearer ${accessToken}`;
   const response = await request.post('/api/signatures', {
     headers,
@@ -501,7 +930,12 @@ async function postSignature(
       position: { x: 12, y: 34 },
     },
   });
-  return { status: response.status(), body: await response.text(), cache: response.headers()['cache-control'] ?? '' };
+  return {
+    status: response.status(),
+    body: await response.text(),
+    cache: response.headers()['cache-control'] ?? '',
+    retryAfter: response.headers()['retry-after'] ?? '',
+  };
 }
 
 async function getSignatures(
@@ -517,6 +951,7 @@ async function getSignatures(
     status: response.status(),
     body,
     cache: response.headers()['cache-control'] ?? '',
+    retryAfter: response.headers()['retry-after'] ?? '',
     already: alreadySigned(body),
   };
 }
@@ -527,5 +962,6 @@ async function getChallenge(request: APIRequestContext, studentId: string): Prom
     status: response.status(),
     body: await response.text(),
     cache: response.headers()['cache-control'] ?? '',
+    retryAfter: response.headers()['retry-after'] ?? '',
   };
 }
