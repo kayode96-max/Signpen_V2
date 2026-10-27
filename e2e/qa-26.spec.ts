@@ -158,7 +158,7 @@ test.describe('PR 26 session signing', () => {
       await caseReloadAndTurnstile(page, request, anon, discovered.supabaseUrl, baseURL, signing, record);
       await caseIpIgnored(request, signing, record);
       await caseNonOwnerMutations(request, signing, record);
-      await caseSentimentAndPages(page, request, baseURL, signing, record);
+      await caseSentimentAndPages(page, request, baseURL, discovered.supabaseUrl, discovered.anonKey, signing, record);
       await caseStorage(discovered.supabaseUrl, discovered.anonKey, signing, record);
       await caseRateLimit(request, anon, discovered.supabaseUrl, discovered.anonKey, record);
     } finally {
@@ -597,6 +597,8 @@ async function caseSentimentAndPages(
   page: Page,
   request: APIRequestContext,
   baseURL: string,
+  supabaseUrl: string,
+  anonKey: string,
   signing: SigningContext,
   record: RecordCase,
 ): Promise<void> {
@@ -621,28 +623,52 @@ async function caseSentimentAndPages(
   );
 
   const origin = new URL(baseURL).origin;
+  const studentWrites = watchStudentWrites(page);
   const boardWatch = watchConsole(page);
   const board = await page.goto(new URL(`/${BOARD_ID}`, origin).href, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(1500);
+  const browserSession = await waitForBrowserSession(page);
   boardWatch.stop();
   const boardStatus = board?.status() ?? 0;
   const boardUrl = new URL(page.url());
   record(
     '5 board renders',
-    boardStatus === 200 && boardWatch.errors.length === 0 && boardUrl.pathname.toLowerCase() === `/${BOARD_ID}`.toLowerCase(),
-    `HTTP ${boardStatus} path=${boardUrl.pathname} console=${boardWatch.errors.join(' | ') || 'none'}`,
+    boardStatus === 200 &&
+      boardWatch.errors.length === 0 &&
+      boardUrl.pathname.toLowerCase() === `/${BOARD_ID}`.toLowerCase() &&
+      browserSession?.anonymous === true,
+    `HTTP ${boardStatus} path=${boardUrl.pathname} anonUserId=${browserSession?.userId ?? 'none'} console=${boardWatch.errors.join(' | ') || 'none'}`,
   );
 
   const dashWatch = watchConsole(page);
   const dash = await page.goto(new URL('/dashboard', origin).href, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(1500);
+  const redirected = await page
+    .waitForURL(/\/login(?:[/?#]|$)/, { timeout: 20_000 })
+    .then(() => true)
+    .catch(() => false);
+  const signedOut = await waitForSignedOut(page);
   dashWatch.stop();
+  studentWrites.stop();
   const dashStatus = dash?.status() ?? 0;
   const dashPath = new URL(page.url()).pathname;
+  const noisy = dashWatch.errors.some((line) => /403|42501|students/i.test(line));
+  let students = 'not queried';
+  if (browserSession?.accessToken && browserSession.userId) {
+    const row = await studentsRow(supabaseUrl, anonKey, browserSession.accessToken, browserSession.userId);
+    const created = row.body.includes(browserSession.userId);
+    students = `${snippet(row.status, row.body)} containsUserId=${created}`;
+  }
   record(
-    '5 dashboard renders',
-    dashStatus < 500 && dashWatch.errors.length === 0 && (dashPath === '/dashboard' || dashPath === '/login'),
-    `HTTP ${dashStatus} path=${dashPath} console=${dashWatch.errors.join(' | ') || 'none'}`,
+    '5 dashboard signs out anon',
+    redirected &&
+      dashPath === '/login' &&
+      dashStatus < 500 &&
+      dashWatch.errors.length === 0 &&
+      !noisy &&
+      browserSession?.anonymous === true &&
+      signedOut &&
+      studentWrites.writes.length === 0 &&
+      !students.includes('containsUserId=true'),
+    `HTTP ${dashStatus} path=${dashPath} redirected=${redirected} signedOut=${signedOut} studentWrites=${studentWrites.writes.join(',') || 'none'} students=${students} console=${dashWatch.errors.join(' | ') || 'none'}`,
   );
 
   const contactWatch = watchConsole(page);
@@ -845,6 +871,89 @@ async function turnstilePresent(page: Page): Promise<number> {
   return page
     .locator('iframe[src*="challenges.cloudflare.com"], .cf-turnstile, script[src*="challenges.cloudflare.com/turnstile"]')
     .count();
+}
+
+type BrowserSession = { userId: string; anonymous: boolean; accessToken: string };
+
+async function readBrowserSession(page: Page): Promise<BrowserSession | null> {
+  return page.evaluate(() => {
+    const key = Object.keys(localStorage).find((name) => name.startsWith('sb-') && name.endsWith('-auth-token'));
+    if (!key) return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as {
+        access_token?: string;
+        user?: { id?: string; is_anonymous?: boolean; app_metadata?: { provider?: string } };
+      };
+      const user = parsed.user;
+      if (!user?.id || !parsed.access_token) return null;
+      return {
+        userId: user.id,
+        anonymous: user.is_anonymous === true || user.app_metadata?.provider === 'anonymous',
+        accessToken: parsed.access_token,
+      };
+    } catch {
+      return null;
+    }
+  });
+}
+
+async function waitForBrowserSession(page: Page): Promise<BrowserSession | null> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const session = await readBrowserSession(page);
+    if (session?.anonymous) return session;
+    await page.waitForTimeout(250);
+  }
+  return readBrowserSession(page);
+}
+
+async function waitForSignedOut(page: Page): Promise<boolean> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const session = await readBrowserSession(page);
+    if (!session) return true;
+    await page.waitForTimeout(250);
+  }
+  return false;
+}
+
+function watchStudentWrites(page: Page): { writes: string[]; stop: () => void } {
+  const writes: string[] = [];
+  const onRequest = (req: { url(): string; method(): string }) => {
+    if (!/\/rest\/v1\/students(?:\?|$)/.test(req.url())) return;
+    const method = req.method().toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+    writes.push(method);
+  };
+  page.on('request', onRequest);
+  return {
+    writes,
+    stop: () => page.off('request', onRequest),
+  };
+}
+
+async function studentsRow(
+  supabaseUrl: string,
+  anonKey: string,
+  accessToken: string,
+  userId: string,
+): Promise<HttpResult> {
+  const api = await newRequest.newContext({
+    extraHTTPHeaders: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
+  });
+  try {
+    const response = await api.get(
+      `${supabaseUrl}/rest/v1/students?id=eq.${encodeURIComponent(userId)}&select=id`,
+    );
+    return {
+      status: response.status(),
+      body: await response.text(),
+      cache: response.headers()['cache-control'] ?? '',
+      retryAfter: '',
+    };
+  } finally {
+    await api.dispose();
+  }
 }
 
 function watchConsole(page: Page): { errors: string[]; stop: () => void } {
