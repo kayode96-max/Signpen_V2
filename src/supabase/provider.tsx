@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import { createAnonymousSignOut } from '@/lib/auth/anonymous-sign-out';
 import { readIsAnonymous } from '@/lib/security/access';
 import { supabase } from './config';
 import { User } from './types';
@@ -237,6 +238,20 @@ export async function updateProfile(user: any, profileData: { displayName?: stri
 export async function signOut(auth: any) {
   await supabase.auth.signOut();
 }
+
+/** Drop this browser's anonymous signer session. Safe to call from both /dashboard and /login. */
+export const signOutAnonymousSession = createAnonymousSignOut({
+  getSession: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return {
+      accessToken: session?.access_token ?? null,
+      isAnonymous: session?.user ? readIsAnonymous(session.user) : false,
+    };
+  },
+  signOutLocal: async () => {
+    await supabase.auth.signOut({ scope: 'local' });
+  },
+});
 
 export async function signInAnonymously(auth: any) {
   const { error } = await supabase.auth.signInAnonymously();

@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { planDashboardStudents } from "@/lib/security/access";
-import { signOut, useUser } from "@/supabase";
+import { signOutAnonymousSession, useUser } from "@/supabase";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import NavBar from "@/components/LandingPage/NavBar";
@@ -26,7 +26,7 @@ export default function DashboardLayout({
     if (!plan.redirectToLogin) return;
     // An anonymous signer session is not a dashboard login. Drop it so the
     // page cannot upsert a students row for that uid.
-    if (plan.signOutAnonymous) void signOut(null);
+    if (plan.signOutAnonymous) void signOutAnonymousSession();
     router.replace("/login");
   }, [plan.redirectToLogin, plan.signOutAnonymous, router]);
 

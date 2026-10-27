@@ -3,7 +3,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signOut, useUser } from "@/supabase";
+import { signOutAnonymousSession, useUser } from "@/supabase";
 import AuthForm from "@/components/auth/auth-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
@@ -18,7 +18,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (isUserLoading) return;
     if (user?.isAnonymous) {
-      void signOut(null);
+      void signOutAnonymousSession();
       return;
     }
     if (user) router.push("/dashboard");
