@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, DependencyList } from 'react';
+import { decideStudentWrite, readIsAnonymous } from '@/lib/security/access';
 import { supabase } from './config';
 
 export interface MockRef {
@@ -220,14 +221,34 @@ export function useCollection<T = any>(
   return { data, isLoading, error };
 }
 
+async function studentWriteAllowed(rowId: string | undefined, merge: boolean) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const sessionUser = session?.user;
+  const decision = decideStudentWrite({
+    sessionUserId: sessionUser?.id,
+    isAnonymous: sessionUser ? readIsAnonymous(sessionUser) : false,
+    rowId,
+    merge,
+  });
+  if (!decision.ok) {
+    console.warn(
+      `[students] skipped ${merge ? 'update' : 'upsert'} rowId=${rowId ?? 'none'} sessionUserId=${sessionUser?.id ?? 'none'} anonymous=${sessionUser ? readIsAnonymous(sessionUser) : false} reason=${decision.reason}`
+    );
+  }
+  return decision;
+}
+
 export function setDocumentNonBlocking(docRef: MockRef, data: any, options?: { merge?: boolean }) {
   const parsed = parsePath(docRef.path);
   
   const execute = async () => {
     let success = false;
     if (parsed.table === 'students') {
+      const decision = await studentWriteAllowed(parsed.id, Boolean(options?.merge));
+      if (!decision.ok) return;
+
       const payload = {
-        id: parsed.id,
+        id: decision.id,
         name: data.name,
         email: data.email,
         profilePhotoUrl: data.profilePhotoUrl,
@@ -238,8 +259,8 @@ export function setDocumentNonBlocking(docRef: MockRef, data: any, options?: { m
       
       Object.keys(payload).forEach(key => (payload as any)[key] === undefined && delete (payload as any)[key]);
       
-      if (options?.merge) {
-        const { error } = await supabase.from('students').update(payload).eq('id', parsed.id);
+      if (decision.op === 'update') {
+        const { error } = await supabase.from('students').update(payload).eq('id', decision.id);
         if (error) console.error("Error setting document:", error);
         else success = true;
       } else {
@@ -267,7 +288,7 @@ export function setDocumentNonBlocking(docRef: MockRef, data: any, options?: { m
     }
   };
 
-  execute();
+  return execute();
 }
 
 export function updateDocumentNonBlocking(docRef: MockRef, data: any) {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import { readIsAnonymous } from '@/lib/security/access';
 import { supabase } from './config';
 import { User } from './types';
 
@@ -27,6 +28,7 @@ const mapSupabaseUser = (sbUser: any): User => {
     displayName: sbUser.user_metadata?.full_name ?? sbUser.user_metadata?.name ?? null,
     photoURL: sbUser.user_metadata?.avatar_url ?? null,
     providerData,
+    isAnonymous: readIsAnonymous(sbUser),
   };
 };
 

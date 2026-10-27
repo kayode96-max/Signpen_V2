@@ -39,6 +39,53 @@ export function readIsAnonymous(user: {
   return false;
 }
 
+/**
+ * Browser write to public.students. The lockdown policies allow this only
+ * when id = auth.uid() and the JWT is not anonymous. Callers must skip the
+ * request when this is not ok, instead of letting Postgres reject it.
+ */
+export function decideStudentWrite(input: {
+  sessionUserId: string | null | undefined;
+  isAnonymous: boolean;
+  rowId: string | null | undefined;
+  merge: boolean;
+}):
+  | { ok: true; op: 'upsert' | 'update'; id: string }
+  | { ok: false; reason: 'signed_out' | 'anonymous' | 'wrong_id' } {
+  if (!input.sessionUserId) return { ok: false, reason: 'signed_out' };
+  if (input.isAnonymous) return { ok: false, reason: 'anonymous' };
+  if (!input.rowId || input.rowId !== input.sessionUserId) return { ok: false, reason: 'wrong_id' };
+  return { ok: true, op: input.merge ? 'update' : 'upsert', id: input.sessionUserId };
+}
+
+/**
+ * /dashboard with an anonymous signer session is signed out: redirect to
+ * login and do not create a students row. A real owner with no row yet
+ * may create their own.
+ */
+export function planDashboardStudents(input: {
+  user: { id: string; isAnonymous: boolean } | null;
+  authReady: boolean;
+  studentReady: boolean;
+  studentExists: boolean;
+}): { redirectToLogin: boolean; signOutAnonymous: boolean; ensureOwnRow: boolean } {
+  if (!input.authReady) {
+    return { redirectToLogin: false, signOutAnonymous: false, ensureOwnRow: false };
+  }
+  if (!input.user || input.user.isAnonymous) {
+    return {
+      redirectToLogin: true,
+      signOutAnonymous: Boolean(input.user?.isAnonymous),
+      ensureOwnRow: false,
+    };
+  }
+  return {
+    redirectToLogin: false,
+    signOutAnonymous: false,
+    ensureOwnRow: input.studentReady && !input.studentExists,
+  };
+}
+
 /** Signed-in, non-anonymous account. Used by account deletion. */
 export function requireRealUser(user: SessionUser | null): AccessDecision {
   if (!user?.id) return UNAUTHORIZED;
