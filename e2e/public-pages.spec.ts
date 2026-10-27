@@ -36,7 +36,24 @@ for (const { path, ready } of PAGES) {
     await page.waitForTimeout(1500);
 
     if (isMobile) {
-      const layout = await horizontalOverflow(page);
+      let layout = await horizontalOverflow(page);
+      // /contact's support card enters with translateX(20px) for 0.6s. On a
+      // 390px iPhone that card sticks out until the entrance ends, and the
+      // fixed wait above races hydration, so the first sample sometimes sees
+      // a few pixels of that card (or a document scrollWidth with no element).
+      // The same check has passed and failed on unchanged 15.3.6 builds.
+      // Sample again after animations settle. An overflow that remains is real.
+      if (layout.overflow) {
+        await page.evaluate(async () => {
+          const pending = document.getAnimations().map((animation) => animation.finished);
+          await Promise.race([
+            Promise.all(pending),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ]);
+        });
+        await page.waitForTimeout(1000);
+        layout = await horizontalOverflow(page);
+      }
       expect(
         layout.overflow,
         `horizontal overflow at mobile width: ${layout.offenders.join('; ') || 'document scrollWidth'}`,
