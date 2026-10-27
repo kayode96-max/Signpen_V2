@@ -4,7 +4,8 @@ import { expect, request as newRequest, test, type APIRequestContext, type Page 
  * QA for PR #26 (backend/rls-api-v2). Writes run only after the deployment's
  * client bundle points at preview Supabase vackuntdjgfmxhwxjuqt.
  * The workflow sets E2E_QA26=1 for that preview run. Other smoke runs skip
- * this file so they do not sign.
+ * this file so they do not sign. A workflow-only commit does not deploy a
+ * preview, so this spec change is what makes Vercel emit deployment_status.
  */
 
 const PREVIEW_REF = 'vackuntdjgfmxhwxjuqt';
