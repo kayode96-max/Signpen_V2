@@ -5,6 +5,8 @@ import type { Student, Signature } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import ThankYouDialog from "./thank-you-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Info, MessageSquare } from "lucide-react";
@@ -16,8 +18,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
-import InstructionDialog from "./instruction-dialog";
 import TurnstileWidget from "@/components/contact/turnstile-widget";
+import { SIGNATORY_NAME_MAX, SIGNATORY_NOTE_MAX } from "@/lib/security/limits";
+import { noteCounterLabel, privateNoteLabel } from "@/lib/signing/signer-ui";
 import dynamic from "next/dynamic";
 import type { ExistingSignature } from "@/components/3d/TShirtCanvas";
 import type { SignaturePlacementPayload } from "@/components/3d/TShirtSigningModal";
@@ -62,8 +65,6 @@ export default function PublicSignOutPage() {
   const [showThankYou, setShowThankYou] = useState(false);
   const [hasAlreadySigned, setHasAlreadySigned] = useState(false);
   const [isCheckingIp, setIsCheckingIp] = useState(true);
-  const [showInstructionDialog, setShowInstructionDialog] = useState(false);
-
   // Pre-sign name + note dialog
   const [infoOpen, setInfoOpen] = useState(false);
   const [sigName, setSigName] = useState("");
@@ -75,8 +76,7 @@ export default function PublicSignOutPage() {
 
   // 3-D modal
   const [showModal, setShowModal] = useState(false);
-
-  useEffect(() => { setShowInstructionDialog(true); }, []);
+  const [thankYouPicture, setThankYouPicture] = useState("");
 
   useEffect(() => {
     const checkIp = async () => {
@@ -233,19 +233,22 @@ export default function PublicSignOutPage() {
 
   const headerContent = (
     <div className="flex flex-col items-center lg:items-start w-full pointer-events-auto">
-      <div className="flex items-center gap-3 lg:gap-4 mb-2 lg:mb-4">
+      <div className="flex w-full min-w-0 items-center gap-3 lg:gap-4 mb-2 lg:mb-4">
         <Avatar className="w-12 h-12 md:w-16 md:h-16 lg:w-20 lg:h-20 border-2 border-white/20 shadow-2xl shrink-0">
           <AvatarImage src={student.profilePhotoUrl} />
           <AvatarFallback className="bg-[#1c1c1e] text-white/60 text-lg lg:text-xl">{student.name.charAt(0)}</AvatarFallback>
         </Avatar>
         
-        <h2 className="text-2xl md:text-4xl lg:text-5xl font-semibold tracking-tight text-white font-headline leading-tight drop-shadow-lg text-left">
+        <h2 className="min-w-0 break-words text-2xl md:text-4xl lg:text-5xl font-semibold tracking-tight text-white font-headline leading-tight drop-shadow-lg text-left">
           {student.pageSettings.pageHeading}
         </h2>
       </div>
       
-      <p className="text-sm md:text-xl lg:text-2xl text-white/80 lg:text-white/60 mt-1 lg:mt-2 lg:mb-8 drop-shadow-lg max-w-sm lg:max-w-none text-center lg:text-left">
+      <p className="text-sm md:text-xl lg:text-2xl text-white/80 lg:text-white/60 mt-1 lg:mt-2 drop-shadow-lg max-w-sm lg:max-w-none text-center lg:text-left">
         {student.pageSettings.pageSubheading}
+      </p>
+      <p className="mt-2 max-w-sm text-center text-sm text-white/70 lg:mb-8 lg:max-w-none lg:text-left">
+        Add your name, draw on the shirt, then tap Done & Submit.
       </p>
     </div>
   );
@@ -272,16 +275,15 @@ export default function PublicSignOutPage() {
 
   return (
     <div className="absolute inset-0 bg-black text-white font-sans overflow-hidden px-4 md:px-8 selection:bg-white/20 flex flex-col z-0 h-[100dvh]">
-      <InstructionDialog open={showInstructionDialog} onOpenChange={setShowInstructionDialog} />
-
-      {/* Contact & Feedback Button */}
+      {/* Contact & Feedback. Icon only below 640px so it does not cover the heading. */}
       <div className="absolute top-4 right-4 z-50 pointer-events-auto">
         <Link 
           href="/contact" 
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1c1c1e]/90 hover:bg-white/10 border border-white/10 text-xs md:text-sm text-white transition-all font-medium backdrop-blur-md shadow-lg"
+          aria-label="Contact & Feedback"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[#1c1c1e]/90 text-white shadow-lg backdrop-blur-md transition-all hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:w-auto sm:gap-2 sm:px-4"
         >
-          <MessageSquare className="h-4 w-4 text-white/70" />
-          Contact & Feedback
+          <MessageSquare className="h-4 w-4 shrink-0 text-white/70" aria-hidden="true" />
+          <span className="hidden text-sm font-medium sm:inline">Contact & Feedback</span>
         </Link>
       </div>
 
@@ -295,7 +297,7 @@ export default function PublicSignOutPage() {
       <div className="w-full max-w-7xl mx-auto relative z-10 flex flex-col lg:flex-row flex-1 h-full min-h-0 overflow-hidden py-4 lg:py-12">
         
         {/* Mobile Header (Top) */}
-        <div className="w-full lg:hidden shrink-0 z-20 px-2 mb-2">
+        <div className="mb-2 w-full min-w-0 shrink-0 z-20 pl-2 pr-16 sm:pr-56 lg:hidden">
           {headerContent}
         </div>
 
@@ -341,43 +343,60 @@ export default function PublicSignOutPage() {
           </DialogHeader>
           <div className="space-y-4 py-4 overflow-y-auto flex-grow pr-1">
             <div className="space-y-2">
-              <Label className="text-white/70">Your Name</Label>
+              <Label htmlFor="signatory-name" className="text-white/80">Your Name</Label>
               <Input 
+                id="signatory-name"
+                name="name"
+                autoComplete="name"
                 placeholder="Jane Doe" 
                 value={sigName} 
-                maxLength={80}
+                maxLength={SIGNATORY_NAME_MAX}
                 onChange={(e) => setSigName(e.target.value)} 
                 className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-white/70">Your Note</Label>
-              <Input 
+              <Label htmlFor="signatory-note" className="text-white/80">Your Note</Label>
+              <Textarea
+                id="signatory-note"
+                name="note"
+                rows={3}
                 placeholder="Wishing you all the best!" 
                 value={sigNote} 
-                maxLength={1000}
+                maxLength={SIGNATORY_NOTE_MAX}
+                aria-describedby="signatory-note-count"
                 onChange={(e) => setSigNote(e.target.value)} 
-                className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
+                className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl min-h-[4.5rem] px-4 py-3 text-base focus-visible:ring-1 focus-visible:ring-white/20 transition-all placeholder:text-white/30"
               />
+              <p id="signatory-note-count" aria-live="polite" className="text-right text-xs tabular-nums text-white/50">
+                {noteCounterLabel(sigNote.length)}
+              </p>
             </div>
-            <label className="flex items-start gap-3 text-sm text-white/70">
-              <input
-                type="checkbox"
+            <div className="flex items-center gap-3">
+              <Switch
+                id="private-note"
                 checked={onlyGraduate}
-                onChange={(e) => setOnlyGraduate(e.target.checked)}
-                className="mt-1 h-4 w-4 accent-white"
+                onCheckedChange={setOnlyGraduate}
+                aria-labelledby="private-note-label"
+                className="h-11 w-16 shrink-0 border-white/20 data-[state=checked]:bg-white data-[state=unchecked]:bg-white/20 [&>span]:h-8 [&>span]:w-8 [&>span]:data-[state=checked]:bg-black [&>span]:data-[state=unchecked]:bg-white [&>span]:data-[state=unchecked]:!translate-x-[2px] [&>span]:data-[state=checked]:!translate-x-[26px]"
               />
-              <span>Only the graduate sees this</span>
-            </label>
+              <label
+                id="private-note-label"
+                className="cursor-pointer text-sm font-medium leading-snug text-white/80"
+                onClick={() => setOnlyGraduate((value) => !value)}
+              >
+                {privateNoteLabel(student.name)}
+              </label>
+            </div>
             {challengeRequired && turnstileSiteKey ? (
               <TurnstileWidget onToken={setTurnstileToken} />
             ) : null}
           </div>
           <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-white/5 flex-shrink-0 flex flex-col sm:flex-row justify-end">
             <DialogClose asChild>
-                <Button variant="ghost" className="text-white hover:bg-white/10 hover:text-white rounded-full">Cancel</Button>
+                <Button variant="ghost" className="min-h-11 text-white hover:bg-white/10 hover:text-white rounded-full">Cancel</Button>
             </DialogClose>
-            <Button onClick={handleOpenModal} className="bg-white text-black hover:bg-gray-200 rounded-full px-6 transition-all font-medium">Open T-Shirt</Button>
+            <Button onClick={handleOpenModal} className="min-h-11 bg-white text-black hover:bg-gray-200 rounded-full px-6 transition-all font-medium">Open T-Shirt</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -388,12 +407,13 @@ export default function PublicSignOutPage() {
           open={showModal}
           onOpenChange={setShowModal}
           onSave={handleSave}
+          onScreenshot={setThankYouPicture}
           signatoryName={sigName}
           existingSignatures={existingSignatures}
         />
       )}
 
-      <ThankYouDialog open={showThankYou} onOpenChange={setShowThankYou} student={student} />
+      <ThankYouDialog open={showThankYou} onOpenChange={setShowThankYou} student={student} pictureUrl={thankYouPicture} />
     </div>
   );
 }

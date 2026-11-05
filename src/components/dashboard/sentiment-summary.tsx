@@ -59,10 +59,11 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         whileTap={{ scale: 0.95 }}
         onClick={handleAnalyze} 
         disabled={isLoading || signatures.length === 0} 
-        className="rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors disabled:opacity-50"
+        className="min-h-11 rounded-full px-4 py-2 hover:bg-white/10 flex items-center gap-2 text-sm text-white transition-colors disabled:opacity-50"
+        aria-label={isLoading ? 'Analyzing sentiments' : (signatures.length > 0 ? 'AI Sentiments' : 'No Signatures')}
       >
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        <span className="hidden sm:inline">{isLoading ? 'Analyzing...' : (signatures.length > 0 ? 'AI Sentiments' : 'No Signatures')}</span>
+        <span>{isLoading ? 'Analyzing...' : (signatures.length > 0 ? 'AI Sentiments' : 'No Signatures')}</span>
       </motion.button>
 
       {summary && !isLoading && (
@@ -75,7 +76,12 @@ export default function SentimentSummary({ signatures }: { signatures: Signature
         </motion.div>
       )}
       {error && !isLoading && (
-        <div className="absolute bottom-full mb-4 right-0 text-red-400 text-sm bg-[#1c1c1e] p-3 rounded-xl border border-red-500/30 whitespace-nowrap z-50">{error}</div>
+        <div
+          role="alert"
+          className="fixed bottom-24 left-4 right-4 z-50 max-w-full break-words whitespace-normal rounded-xl border border-red-500/30 bg-[#1c1c1e] p-3 text-left text-sm text-red-400 sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:mb-4 sm:w-80"
+        >
+          {error}
+        </div>
       )}
     </div>
   );

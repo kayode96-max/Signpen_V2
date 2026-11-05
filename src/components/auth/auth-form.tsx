@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { 
   useFirebase,
@@ -42,6 +42,7 @@ export default function AuthForm() {
   const { toast } = useToast();
   const { auth } = useFirebase();
   const [isLoading, setIsLoading] = useState(false);
+  const initialTab = useSearchParams().get("tab") === "signup" ? "signup" : "login";
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -120,7 +121,7 @@ export default function AuthForm() {
   };
 
   return (
-    <Tabs defaultValue="login" className="w-full">
+    <Tabs defaultValue={initialTab} className="w-full">
       <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="login">Sign In</TabsTrigger>
         <TabsTrigger value="signup">Sign Up</TabsTrigger>
