@@ -25,9 +25,14 @@ import React, {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { SHIRT_MODEL_URL } from '@/lib/shirt/asset';
+import { canvasDrawSize, shirtIntroScale, shirtIntroSettled, type ShirtIntro } from '@/lib/shirt/intro';
+import { readResponseBytes } from '@/lib/shirt/bytes';
 import {
   clearSessionPlacements,
   commitSessionPlacement,
+  overlapsPlacement,
   texturePointFromUv,
   undoSessionPlacement,
   type ShirtPlacement,
@@ -78,6 +83,23 @@ interface TShirtCanvasProps {
   /** Whether clicking is disabled (read-only / gallery mode) */
   readOnly?: boolean;
   className?: string;
+  /** Override the compressed shirt. Defaults to the hashed public GLB. */
+  modelUrl?: string;
+  /** Already-downloaded GLB. When set, the canvas does not fetch again. */
+  modelBuffer?: ArrayBuffer | null;
+  onProgress?: (progress: { loadedBytes: number; totalBytes: number | null }) => void;
+  onReady?: () => void;
+  onModelError?: (message: string) => void;
+  /**
+   * `grow` is the dashboard and first appearance (1.5s).
+   * `none` is a crossfade onto the flat shirt, which must start at full size.
+   */
+  intro?: ShirtIntro;
+  /**
+   * When false, the render loop does not draw. Used while the signing modal
+   * is open so a board behind the pad cannot occupy the GPU.
+   */
+  active?: boolean;
 }
 
 // ─── Texture dimensions ─────────────────────────────────────────────────────
@@ -97,7 +119,7 @@ const toUvFromPercentPosition = (
 
 // ─── Component ──────────────────────────────────────────────────────────────
 const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
-  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className }, ref) => {
+  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className, modelUrl = SHIRT_MODEL_URL, modelBuffer = null, onProgress, onReady, onModelError, intro = 'grow', active = true }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
 
     // Three.js objects kept in refs so they don't cause re-renders
@@ -125,6 +147,21 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     const loadedUrlsRef = useRef<Set<string>>(new Set());
     // All mesh parts of the shirt (used for full-surface raycasting)
     const shirtMeshesRef = useRef<THREE.Mesh[]>([]);
+    const onProgressRef = useRef(onProgress);
+    const onReadyRef = useRef(onReady);
+    const onErrorRef = useRef(onModelError);
+    const modelUrlRef = useRef(modelUrl);
+    const modelBufferRef = useRef(modelBuffer);
+    const introRef = useRef(intro);
+    const activeRef = useRef(active);
+    const loopRef = useRef<() => void>(() => {});
+    introRef.current = intro;
+    activeRef.current = active;
+    onProgressRef.current = onProgress;
+    onReadyRef.current = onReady;
+    onErrorRef.current = onModelError;
+    modelUrlRef.current = modelUrl;
+    modelBufferRef.current = modelBuffer;
 
     // ── Compositing helpers ────────────────────────────────────────────────
     const redrawComposite = useCallback(() => {
@@ -164,6 +201,24 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     useImperativeHandle(ref, () => ({
       addSignature(sigCanvas, uv, size = { width: 280, height: 120 }) {
         const area = texturePointFromUv(uv, TEX_W, TEX_H);
+        // Existing signatures count even before their images have been baked,
+        // so an auto-placed mark cannot land on someone during the fade-in.
+        const existingAreas = (existingSignaturesRef.current ?? []).flatMap((sig) => {
+          const sigUv = toUvFromPercentPosition(sig.position);
+          if (!sigUv) return [];
+          return [{ area: texturePointFromUv(sigUv, TEX_W, TEX_H) }];
+        });
+        let latestSession = -1;
+        for (let i = placedItemsRef.current.length - 1; i >= 0; i--) {
+          if (placedItemsRef.current[i].kind === 'session') {
+            latestSession = i;
+            break;
+          }
+        }
+        const baked = latestSession < 0
+          ? placedItemsRef.current
+          : placedItemsRef.current.filter((_, index) => index !== latestSession);
+        if (overlapsPlacement([...baked, ...existingAreas], area, SIG_RADIUS)) return false;
         const result = commitSessionPlacement(
           placedItemsRef.current,
           { kind: 'session', canvas: sigCanvas, uv, size, area },
@@ -289,7 +344,14 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       cameraRef.current = camera;
 
       // Renderer
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      let renderer: THREE.WebGLRenderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      } catch (error) {
+        console.error('WebGL unavailable', error);
+        onErrorRef.current?.('Could not start the 3D shirt.');
+        return;
+      }
       renderer.setClearColor(0x000000, 0);
       renderer.setSize(w, h);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
@@ -335,14 +397,19 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       ctx.fillRect(0, 0, TEX_W, TEX_H);
       const ct = new THREE.CanvasTexture(cc);
       ct.colorSpace = THREE.SRGBColorSpace;
+      // glTF UVs use the top-left of the image. CanvasTexture flips by default.
+      ct.flipY = false;
       ct.anisotropy = 16;
       compositeTextureRef.current = ct;
 
-      // Load GLTF model
+      // Load the compressed GLB. MeshoptDecoder's WASM is inlined in the
+      // three.js module, so the decoder is served with our JS, not a CDN.
+      const abort = new AbortController();
+      let disposed = false;
       const loader = new GLTFLoader();
-      loader.load(
-        '/model/tshirt.gltf',
-        (gltf) => {
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      const acceptModel = (gltf: { scene: THREE.Group }) => {
+        if (disposed) return;
           const model = gltf.scene;
           modelRef.current = model;
 
@@ -361,7 +428,10 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
             }
           });
 
-          if (!shirtMesh) return;
+          if (!shirtMesh) {
+            onErrorRef.current?.('The shirt model did not include a mesh.');
+            return;
+          }
           shirtMeshRef.current = shirtMesh;
 
           // Capture original texture from the primary mesh, then apply composite
@@ -400,100 +470,140 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
           const pivot = new THREE.Group();
           pivot.add(model);
           
-          // Initial states for animation
           pivot.scale.setScalar(0);
           scene.add(pivot);
 
           // Adjust orbit controls to rotate exactly around this new center
           controls.target.set(0, 0, 0);
 
-          // Grow animation
-          const start = Date.now();
-          const dur = 1500;
-          const grow = () => {
-            const t = Math.min((Date.now() - start) / dur, 1);
-            const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-            pivot.scale.setScalar(2.5 * e);
-            if (t < 1) requestAnimationFrame(grow);
-            else {
-              isLoadedRef.current = true;
-              // Bake any existing signatures that arrived before the model was ready
-              const sigs = existingSignaturesRef.current;
-              if (sigs && sigs.length > 0) {
-                const bakeInitial = async () => {
-                  for (const sig of sigs) {
-                    if (!sig?.signatureImageUrl) continue;
-                    if (loadedUrlsRef.current.has(sig.signatureImageUrl)) continue;
-                    const uv = toUvFromPercentPosition(sig.position);
-                    if (!uv) continue;
-                    loadedUrlsRef.current.add(sig.signatureImageUrl);
-                    await new Promise<void>((resolve) => {
-                      const img = new Image();
-                      img.crossOrigin = 'anonymous';
-                      img.onload = () => {
-                        const offscreen = document.createElement('canvas');
-                        offscreen.width = img.naturalWidth;
-                        offscreen.height = img.naturalHeight;
-                        const ctx = offscreen.getContext('2d')!;
-                        ctx.drawImage(img, 0, 0);
-                        placedItemsRef.current.push({
-                          kind: 'existing',
-                          canvas: offscreen,
-                          uv,
-                          size: { width: 340, height: 140 },
-                          area: texturePointFromUv(uv, TEX_W, TEX_H),
-                        });
-                        redrawComposite();
-                        resolve();
-                      };
-                      img.onerror = () => resolve();
-                      img.src = sig.signatureImageUrl;
-                    });
-                  }
-                };
-                bakeInitial();
-              }
+          const settleIntro = () => {
+            if (disposed) return;
+            pivot.scale.setScalar(shirtIntroScale('none', 0));
+            isLoadedRef.current = true;
+            const sigs = existingSignaturesRef.current;
+            if (sigs && sigs.length > 0) {
+              const bakeInitial = async () => {
+                for (const sig of sigs) {
+                  if (!sig?.signatureImageUrl) continue;
+                  if (loadedUrlsRef.current.has(sig.signatureImageUrl)) continue;
+                  const uv = toUvFromPercentPosition(sig.position);
+                  if (!uv) continue;
+                  loadedUrlsRef.current.add(sig.signatureImageUrl);
+                  await new Promise<void>((resolve) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                      const offscreen = document.createElement('canvas');
+                      offscreen.width = img.naturalWidth;
+                      offscreen.height = img.naturalHeight;
+                      const ctx = offscreen.getContext('2d')!;
+                      ctx.drawImage(img, 0, 0);
+                      placedItemsRef.current.push({
+                        kind: 'existing',
+                        canvas: offscreen,
+                        uv,
+                        size: { width: 340, height: 140 },
+                        area: texturePointFromUv(uv, TEX_W, TEX_H),
+                      });
+                      redrawComposite();
+                      resolve();
+                    };
+                    img.onerror = () => resolve();
+                    img.src = sig.signatureImageUrl;
+                  });
+                }
+              };
+              void bakeInitial();
             }
+            onReadyRef.current?.();
           };
-          requestAnimationFrame(grow);
-        },
-        undefined,
-        (err) => console.error('GLTF load error', err)
-      );
 
-      // Animation loop
-      const animate = () => {
-        rafRef.current = requestAnimationFrame(animate);
+          if (introRef.current === 'none') {
+            settleIntro();
+          } else {
+            const start = Date.now();
+            const grow = () => {
+              if (disposed) return;
+              const elapsed = Date.now() - start;
+              pivot.scale.setScalar(shirtIntroScale('grow', elapsed));
+              if (!shirtIntroSettled('grow', elapsed)) requestAnimationFrame(grow);
+              else settleIntro();
+            };
+            requestAnimationFrame(grow);
+          }
+      };
+
+      void (async () => {
+        try {
+          await MeshoptDecoder.ready;
+          let buffer = modelBufferRef.current;
+          if (!buffer) {
+            const response = await fetch(modelUrlRef.current, { signal: abort.signal });
+            if (!response.ok) throw new Error(`Shirt download failed (${response.status})`);
+            buffer = await readResponseBytes(response, (loadedBytes, totalBytes) => {
+              onProgressRef.current?.({ loadedBytes, totalBytes });
+            });
+          }
+          if (disposed) return;
+          loader.parse(
+            buffer,
+            '',
+            (gltf) => acceptModel(gltf),
+            (err) => {
+              console.error('GLTF load error', err);
+              const message = err instanceof Error ? err.message : 'Could not read the 3D shirt.';
+              onErrorRef.current?.(message);
+            },
+          );
+        } catch (err) {
+          if (disposed || (err instanceof DOMException && err.name === 'AbortError')) return;
+          console.error('GLTF load error', err);
+          const message = err instanceof Error ? err.message : 'Could not load the 3D shirt.';
+          onErrorRef.current?.(message);
+        }
+      })();
+
+      // Animation loop. A paused board keeps its context and draws nothing.
+      const loop = () => {
+        if (disposed || !activeRef.current) {
+          rafRef.current = 0;
+          return;
+        }
+        rafRef.current = requestAnimationFrame(loop);
         controls.update();
         renderer.render(scene, camera);
       };
-      animate();
+      loopRef.current = loop;
+      loop();
 
       // Resize handler
       const onResize = () => {
         if (!container) return;
-        const nw = container.clientWidth;
-        const nh = container.clientHeight;
-        const aspect = nw / nh;
+        const size = canvasDrawSize(container.clientWidth, container.clientHeight);
+        if (!size) return;
+        const aspect = size.width / size.height;
         camera.aspect = aspect;
 
         // Dynamically scale the camera so the shirt fills the screen optimally.
         // If the screen is narrower than the shirt (aspect < 0.75), zoom out to fit the width.
         // If the screen is wider, cap the zoom at 1 so the height doesn't get chopped off.
         camera.zoom = Math.min(1, aspect / 0.75);
-        
+
         camera.updateProjectionMatrix();
 
         // Update pixel ratio on every resize to perfectly catch browser zooming (Ctrl +)
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
-        renderer.setSize(nw, nh);
+        renderer.setSize(size.width, size.height);
       };
       window.addEventListener('resize', onResize);
-      
-      // Call once initially
+      const resizeObserver = new ResizeObserver(() => onResize());
+      resizeObserver.observe(container);
       onResize();
 
       return () => {
+        disposed = true;
+        abort.abort();
+        resizeObserver.disconnect();
         window.removeEventListener('resize', onResize);
         cancelAnimationFrame(rafRef.current);
         controls.dispose();
@@ -502,6 +612,16 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+      activeRef.current = active;
+      if (!active) {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+        return;
+      }
+      if (rafRef.current === 0) loopRef.current();
+    }, [active]);
 
     // ── Mouse Interaction ───────────────────────────────────────────────
     const currentHoveredUrlRef = useRef<string | null>(null);

@@ -2,8 +2,9 @@
  * Landing-page byte budget used by `scripts/perf-budget.mts`.
  *
  * The gated set is every request the browser initiated before first
- * contentful paint, excluding lazy assets (hero video, scene.bin, three.js
- * chunks). Each request counts its full transfer size once it finishes.
+ * contentful paint, excluding lazy assets (hero video, the shirt model,
+ * meshopt/draco/basis decoders, and three.js chunks). Each request counts
+ * its full transfer size once it finishes.
  * Lazy assets stay in the report and cannot fail the gate.
  *
  * `ENFORCE_PERF_BUDGETS=1` fails the process. Any other value is report-only.
@@ -30,6 +31,9 @@ export function isLazyFirstViewAsset(url: string): boolean {
   const pathname = pathnameOf(url);
   if (/\/vid1(?:\.[^/]+)?\.mp4$/i.test(pathname)) return true;
   if (pathname.endsWith('/scene.bin')) return true;
+  if (pathname.endsWith('/tshirt.gltf')) return true;
+  if (/\/tshirt\.[a-z0-9]+\.glb$/i.test(pathname)) return true;
+  if (pathname.includes('meshopt') || pathname.includes('/draco') || pathname.includes('basis_transcoder')) return true;
   if (pathname.includes('three')) return true;
   return false;
 }

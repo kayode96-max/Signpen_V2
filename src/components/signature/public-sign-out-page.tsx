@@ -3,10 +3,6 @@
 import { useState, useMemo, useEffect } from "react";
 import type { Student, Signature } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import ThankYouDialog from "./thank-you-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Info, MessageSquare } from "lucide-react";
@@ -14,33 +10,11 @@ import { useDoc, useCollection, doc, collection, query, signInAnonymously, initi
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter, DialogClose,
-} from "@/components/ui/dialog";
-import TurnstileWidget from "@/components/contact/turnstile-widget";
-import { SIGNATORY_NAME_MAX, SIGNATORY_NOTE_MAX } from "@/lib/security/limits";
-import { noteCounterLabel, privateNoteLabel } from "@/lib/signing/signer-ui";
-import dynamic from "next/dynamic";
 import type { ExistingSignature } from "@/components/3d/TShirtCanvas";
 import type { SignaturePlacementPayload } from "@/components/3d/TShirtSigningModal";
-
-const TShirtSigningModal = dynamic(
-  () => import("@/components/3d/TShirtSigningModal"),
-  { ssr: false, loading: () => null }
-);
-
-const TShirtBoard = dynamic(
-  () => import("@/components/3d/TShirtBoard"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
-      </div>
-    ),
-  }
-);
+import type TShirtSigningModalComponent from "@/components/3d/TShirtSigningModal";
+import DeferredPublicBoard from "@/components/3d/DeferredPublicBoard";
+import { boardSwapAllowed, IDLE_SIGNER, type SignerBusyness } from "@/lib/shirt/board-swap";
 
 const { firestore, auth } = initializeFirebase();
 
@@ -65,8 +39,6 @@ export default function PublicSignOutPage() {
   const [showThankYou, setShowThankYou] = useState(false);
   const [hasAlreadySigned, setHasAlreadySigned] = useState(false);
   const [isCheckingIp, setIsCheckingIp] = useState(true);
-  // Pre-sign name + note dialog
-  const [infoOpen, setInfoOpen] = useState(false);
   const [sigName, setSigName] = useState("");
   const [sigNote, setSigNote] = useState("");
   const [onlyGraduate, setOnlyGraduate] = useState(false);
@@ -74,9 +46,12 @@ export default function PublicSignOutPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? '';
 
-  // 3-D modal
+  // Draw pad opens immediately. The board's 3D shirt waits, and it only
+  // fades in once the pad, placement, and name/note fields are idle.
   const [showModal, setShowModal] = useState(false);
   const [thankYouPicture, setThankYouPicture] = useState("");
+  const [SigningModal, setSigningModal] = useState<typeof TShirtSigningModalComponent | null>(null);
+  const [signerActivity, setSignerActivity] = useState<SignerBusyness>(IDLE_SIGNER);
 
   useEffect(() => {
     const checkIp = async () => {
@@ -131,27 +106,16 @@ export default function PublicSignOutPage() {
     }
   };
 
-  const handleOpenInfo = () => {
+  const handleOpenDraw = () => {
     if (hasAlreadySigned || isCheckingIp) return;
-    setInfoOpen(true);
-    void loadChallenge();
-  };
-
-  const handleOpenModal = () => {
-    if (!sigName.trim() || !sigNote.trim()) {
-      toast({ variant: "destructive", title: "Missing Information", description: "Please fill in your name and note." });
-      return;
-    }
-    if (challengeRequired && turnstileSiteKey && !turnstileToken) {
-      toast({
-        variant: "destructive",
-        title: "Check required",
-        description: "Complete the spam check before signing.",
-      });
-      return;
-    }
-    setInfoOpen(false);
     setShowModal(true);
+    void loadChallenge();
+    if (!SigningModal) {
+      // Prefetch stays off so the shirt model and three.js do not start during page load.
+      void import("@/components/3d/TShirtSigningModal").then((mod) => {
+        setSigningModal(() => mod.default);
+      });
+    }
   };
 
   const handleSave = async (payload: SignaturePlacementPayload) => {
@@ -189,8 +153,6 @@ export default function PublicSignOutPage() {
         if (response.status === 429 && payload.error === "challenge_required") {
           setChallengeRequired(true);
           setTurnstileToken(null);
-          setShowModal(false);
-          setInfoOpen(true);
           throw new Error("Complete the spam check to keep signing from this network.");
         }
         throw new Error(payload.error || "Submission failed.");
@@ -248,7 +210,7 @@ export default function PublicSignOutPage() {
         {student.pageSettings.pageSubheading}
       </p>
       <p className="mt-2 max-w-sm text-center text-sm text-white/70 lg:mb-8 lg:max-w-none lg:text-left">
-        Add your name, draw on the shirt, then tap Done & Submit.
+        Draw your signature, add your name, and we will find a free spot.
       </p>
     </div>
   );
@@ -259,7 +221,7 @@ export default function PublicSignOutPage() {
         size="lg" 
         className="bg-white text-black hover:bg-gray-200 rounded-full w-full sm:w-auto px-8 lg:px-10 h-12 lg:h-14 text-base lg:text-lg font-medium shadow-xl transition-all" 
         disabled={buttonDisabled} 
-        onClick={handleOpenInfo}
+        onClick={handleOpenDraw}
       >
         {(isCheckingIp || isSubmitting) && <Loader2 className="mr-2 h-4 lg:h-5 w-4 lg:w-5 animate-spin text-black" />}
         {buttonText}
@@ -311,9 +273,9 @@ export default function PublicSignOutPage() {
             {areSignaturesLoading ? (
               <Loader2 className="animate-spin text-white h-8 w-8" />
             ) : (
-              <TShirtBoard
+              <DeferredPublicBoard
                 existingSignatures={existingSignatures}
-                className="w-full h-full object-contain"
+                idle={boardSwapAllowed(signerActivity)}
               />
             )}
           </div>
@@ -332,83 +294,32 @@ export default function PublicSignOutPage() {
 
       </div>
 
-      {/* Name + Note dialog */}
-      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
-        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm max-h-[85vh] sm:max-h-[90vh] flex flex-col gap-0 bg-[#121212] border border-white/10 text-white rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl p-4 sm:p-6 overflow-hidden">
-          <DialogHeader className="pb-4 border-b border-white/5 flex-shrink-0">
-            <DialogTitle className="text-xl font-semibold tracking-tight">Before you sign</DialogTitle>
-            <DialogDescription className="text-sm text-white/60">
-              Please enter your name and a short message.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4 overflow-y-auto flex-grow pr-1">
-            <div className="space-y-2">
-              <Label htmlFor="signatory-name" className="text-white/80">Your Name</Label>
-              <Input 
-                id="signatory-name"
-                name="name"
-                autoComplete="name"
-                placeholder="Jane Doe" 
-                value={sigName} 
-                maxLength={SIGNATORY_NAME_MAX}
-                onChange={(e) => setSigName(e.target.value)} 
-                className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl h-12 px-4 focus:ring-1 focus:ring-white/20 transition-all placeholder:text-white/30"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="signatory-note" className="text-white/80">Your Note</Label>
-              <Textarea
-                id="signatory-note"
-                name="note"
-                rows={3}
-                placeholder="Wishing you all the best!" 
-                value={sigNote} 
-                maxLength={SIGNATORY_NOTE_MAX}
-                aria-describedby="signatory-note-count"
-                onChange={(e) => setSigNote(e.target.value)} 
-                className="bg-[#1c1c1e] border-transparent focus:border-white/20 text-white rounded-xl min-h-[4.5rem] px-4 py-3 text-base focus-visible:ring-1 focus-visible:ring-white/20 transition-all placeholder:text-white/30"
-              />
-              <p id="signatory-note-count" aria-live="polite" className="text-right text-xs tabular-nums text-white/50">
-                {noteCounterLabel(sigNote.length)}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="private-note"
-                checked={onlyGraduate}
-                onCheckedChange={setOnlyGraduate}
-                aria-labelledby="private-note-label"
-                className="h-11 w-16 shrink-0 border-white/20 data-[state=checked]:bg-white data-[state=unchecked]:bg-white/20 [&>span]:h-8 [&>span]:w-8 [&>span]:data-[state=checked]:bg-black [&>span]:data-[state=unchecked]:bg-white [&>span]:data-[state=unchecked]:!translate-x-[2px] [&>span]:data-[state=checked]:!translate-x-[26px]"
-              />
-              <label
-                id="private-note-label"
-                className="cursor-pointer text-sm font-medium leading-snug text-white/80"
-                onClick={() => setOnlyGraduate((value) => !value)}
-              >
-                {privateNoteLabel(student.name)}
-              </label>
-            </div>
-            {challengeRequired && turnstileSiteKey ? (
-              <TurnstileWidget onToken={setTurnstileToken} />
-            ) : null}
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-white/5 flex-shrink-0 flex flex-col sm:flex-row justify-end">
-            <DialogClose asChild>
-                <Button variant="ghost" className="min-h-11 text-white hover:bg-white/10 hover:text-white rounded-full">Cancel</Button>
-            </DialogClose>
-            <Button onClick={handleOpenModal} className="min-h-11 bg-white text-black hover:bg-gray-200 rounded-full px-6 transition-all font-medium">Open T-Shirt</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Full 3-D signing modal */}
-      {showModal && (
-        <TShirtSigningModal
+      {showModal && !SigningModal ? (
+        <div role="status" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-6 text-center text-sm text-white">
+          Opening the drawing pad…
+        </div>
+      ) : null}
+      {showModal && SigningModal && (
+        <SigningModal
           open={showModal}
-          onOpenChange={setShowModal}
+          onOpenChange={(open) => {
+            setShowModal(open);
+            if (!open) setSignerActivity(IDLE_SIGNER);
+          }}
+          onSignerActivity={setSignerActivity}
           onSave={handleSave}
           onScreenshot={setThankYouPicture}
           signatoryName={sigName}
+          onSignatoryNameChange={setSigName}
+          signatoryNote={sigNote}
+          onSignatoryNoteChange={setSigNote}
+          onlyGraduate={onlyGraduate}
+          onOnlyGraduateChange={setOnlyGraduate}
+          graduateName={student.name}
+          challengeRequired={challengeRequired}
+          turnstileSiteKey={turnstileSiteKey}
+          turnstileToken={turnstileToken}
+          onTurnstileToken={setTurnstileToken}
           existingSignatures={existingSignatures}
         />
       )}

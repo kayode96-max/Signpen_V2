@@ -1,0 +1,17 @@
+{
+  "publicPath": "/model/tshirt.ba5dbc7fb5.glb",
+  "bytes": 390772,
+  "hash": "ba5dbc7fb5",
+  "triangles": 53914,
+  "simplify": {
+    "ratio": 0.35,
+    "error": 0.002,
+    "textureSize": 1024
+  },
+  "decoder": {
+    "file": "node_modules/three/examples/jsm/libs/meshopt_decoder.module.js",
+    "bytes": 24850,
+    "note": "Imported by TShirtCanvas from three.js. WASM is inlined, so nothing is fetched from a CDN."
+  },
+  "totalBytes": 415622
+}

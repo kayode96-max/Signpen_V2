@@ -40,6 +40,8 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const contextRef = useRef<CanvasRenderingContext2D | null>(null);
     const isDrawingRef = useRef(false);
+    const strokeCountRef = useRef(0);
+    const cachedUrlRef = useRef<string | null>(null);
     
     // Only one text element is allowed now
     const [textElement, setTextElement] = useState<TextElement | null>(null);
@@ -60,12 +62,13 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
     useImperativeHandle(ref, () => ({
       clear,
       toDataURL: () => {
+        if (cachedUrlRef.current) return cachedUrlRef.current;
         const canvas = canvasRef.current;
         const context = contextRef.current;
         if (!canvas || !context) return "";
         
         const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
+        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
         if(!tempCtx) return "";
 
         tempCanvas.width = canvas.width;
@@ -87,20 +90,12 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
           tempCtx.fillText(textElement.text, textElement.x * dpr, textElement.y * dpr);
         }
         
-        return tempCanvas.toDataURL("image/png");
+        cachedUrlRef.current = tempCanvas.toDataURL("image/png");
+        return cachedUrlRef.current;
       },
       isEmpty: () => {
-         const canvas = canvasRef.current;
-         if (!canvas) return true;
-
-         // Check if canvas is blank
-         const blankCanvas = document.createElement('canvas');
-         blankCanvas.width = canvas.width;
-         blankCanvas.height = canvas.height;
-         const isCanvasBlank = canvas.toDataURL() === blankCanvas.toDataURL();
-         
          const hasText = !!textElement && textElement.text.trim() !== "";
-         return isCanvasBlank && !hasText;
+         return strokeCountRef.current === 0 && !hasText;
       },
     }));
 
@@ -109,6 +104,8 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
       const context = contextRef.current;
       if (!canvas || !context) return;
       context.clearRect(0, 0, canvas.width, canvas.height);
+      strokeCountRef.current = 0;
+      cachedUrlRef.current = null;
       setTextElement(null);
     }, []);
 
@@ -137,7 +134,7 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
         if (currentImage) {
             // If the canvas was already drawn on, redraw it. This handles resizing.
             const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
             if(tempCtx) {
                 tempCanvas.width = currentImage.width;
                 tempCanvas.height = currentImage.height;
@@ -146,6 +143,10 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
             }
         }
     }, []);
+
+    useEffect(() => {
+      cachedUrlRef.current = null;
+    }, [textElement, color, font, size]);
 
     useEffect(() => {
       setupCanvasContext();
@@ -193,6 +194,8 @@ const SignatureCanvas = forwardRef<SignatureCanvasRef, SignatureCanvasProps>(
       if (!isDrawingRef.current || !context) return;
       context.closePath();
       isDrawingRef.current = false;
+      strokeCountRef.current += 1;
+      cachedUrlRef.current = null;
     };
 
     const handleCanvasClick = (e: React.MouseEvent) => {

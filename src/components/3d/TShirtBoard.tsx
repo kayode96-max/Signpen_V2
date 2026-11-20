@@ -12,6 +12,7 @@
 import React, { forwardRef, useImperativeHandle, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Loader2 } from 'lucide-react';
+import type { ShirtIntro } from '@/lib/shirt/intro';
 import type { TShirtCanvasRef, ExistingSignature } from './TShirtCanvas';
 
 export interface TShirtBoardRef {
@@ -22,6 +23,12 @@ interface TShirtBoardProps {
   existingSignatures?: ExistingSignature[];
   className?: string;
   onHoverSignature?: (sig: ExistingSignature | null, x: number, y: number) => void;
+  onReady?: () => void;
+  onModelError?: (message: string) => void;
+  /** `none` when this board crossfades over the flat shirt. Dashboard keeps the grow. */
+  intro?: ShirtIntro;
+  /** False while the signing modal is open. The canvas stays mounted but does not draw. */
+  active?: boolean;
 }
 
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
@@ -37,7 +44,7 @@ const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
 });
 
 const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
-  ({ existingSignatures, className, onHoverSignature }, ref) => {
+  ({ existingSignatures, className, onHoverSignature, onReady, onModelError, intro = 'grow', active = true }, ref) => {
     const canvasRef = useRef<TShirtCanvasRef>(null);
 
     useImperativeHandle(ref, () => ({
@@ -53,6 +60,10 @@ const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
         readOnly
         className={className}
         onHoverSignature={onHoverSignature}
+        onReady={onReady}
+        onModelError={onModelError}
+        intro={intro}
+        active={active}
       />
     );
   }
