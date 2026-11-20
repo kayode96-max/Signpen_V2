@@ -59,6 +59,7 @@ import {
   shirtSubmitDisabled,
 } from '@/lib/signing/signer-ui';
 import FlatShirt from './FlatShirt';
+import { signerBusyness, type SignerBusyness } from '@/lib/shirt/board-swap';
 import type { TShirtCanvasRef, ExistingSignature } from './TShirtCanvas';
 
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), { ssr: false });
@@ -122,6 +123,8 @@ interface TShirtSigningModalProps {
   turnstileSiteKey: string;
   turnstileToken: string | null;
   onTurnstileToken: (token: string | null) => void;
+  /** Lets the public board hold its 3D swap while this dialog is in use. */
+  onSignerActivity?: (activity: SignerBusyness) => void;
   existingSignatures?: ExistingSignature[];
 }
 
@@ -155,6 +158,7 @@ export default function TShirtSigningModal({
   turnstileSiteKey,
   turnstileToken,
   onTurnstileToken,
+  onSignerActivity,
   existingSignatures,
 }: TShirtSigningModalProps): JSX.Element {
   const shirtRef = useRef<TShirtCanvasRef>(null);
@@ -164,6 +168,10 @@ export default function TShirtSigningModal({
   const { toast } = useToast();
 
   const [stage, setStage] = useState<Stage>('draw');
+  const [nameFieldFocused, setNameFieldFocused] = useState(false);
+  const [noteFieldFocused, setNoteFieldFocused] = useState(false);
+  const onSignerActivityRef = useRef(onSignerActivity);
+  onSignerActivityRef.current = onSignerActivity;
   const [load, setLoad] = useState(initialShirtLoadState);
   const [modelBuffer, setModelBuffer] = useState<ArrayBuffer | null>(null);
   const [hint, setHint] = useState('');
@@ -180,6 +188,15 @@ export default function TShirtSigningModal({
   const [selectedSize, setSelectedSize] = useState(4);
 
   const challengeBlocked = challengeRequired && Boolean(turnstileSiteKey) && !turnstileToken;
+
+  useEffect(() => {
+    onSignerActivityRef.current?.(signerBusyness({
+      modalOpen: open,
+      stage,
+      nameFieldFocused,
+      noteFieldFocused,
+    }));
+  }, [open, stage, nameFieldFocused, noteFieldFocused]);
 
   useEffect(() => {
     if (!challengeBlocked || stage !== 'shirt') return;
@@ -541,6 +558,8 @@ export default function TShirtSigningModal({
                   value={signatoryName}
                   maxLength={SIGNATORY_NAME_MAX}
                   onChange={(event) => onSignatoryNameChange(event.target.value)}
+                  onFocus={() => setNameFieldFocused(true)}
+                  onBlur={() => setNameFieldFocused(false)}
                   className="h-12 rounded-xl border-transparent bg-[#1c1c1e] px-4 text-white transition-all placeholder:text-white/30 focus:border-white/20 focus:ring-1 focus:ring-white/20"
                 />
               </div>
@@ -555,6 +574,8 @@ export default function TShirtSigningModal({
                   maxLength={SIGNATORY_NOTE_MAX}
                   aria-describedby="signatory-note-count"
                   onChange={(event) => onSignatoryNoteChange(event.target.value)}
+                  onFocus={() => setNoteFieldFocused(true)}
+                  onBlur={() => setNoteFieldFocused(false)}
                   className="min-h-[4.5rem] rounded-xl border-transparent bg-[#1c1c1e] px-4 py-3 text-base text-white transition-all placeholder:text-white/30 focus-visible:ring-1 focus-visible:ring-white/20"
                 />
                 <p id="signatory-note-count" aria-live="polite" className="text-right text-xs tabular-nums text-white/50">

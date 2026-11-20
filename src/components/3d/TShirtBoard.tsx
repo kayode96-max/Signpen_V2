@@ -22,6 +22,8 @@ interface TShirtBoardProps {
   existingSignatures?: ExistingSignature[];
   className?: string;
   onHoverSignature?: (sig: ExistingSignature | null, x: number, y: number) => void;
+  onReady?: () => void;
+  onModelError?: (message: string) => void;
 }
 
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
@@ -37,7 +39,7 @@ const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
 });
 
 const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
-  ({ existingSignatures, className, onHoverSignature }, ref) => {
+  ({ existingSignatures, className, onHoverSignature, onReady, onModelError }, ref) => {
     const canvasRef = useRef<TShirtCanvasRef>(null);
 
     useImperativeHandle(ref, () => ({
@@ -53,6 +55,8 @@ const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
         readOnly
         className={className}
         onHoverSignature={onHoverSignature}
+        onReady={onReady}
+        onModelError={onModelError}
       />
     );
   }

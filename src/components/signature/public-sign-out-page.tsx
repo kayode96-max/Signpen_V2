@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Student, Signature } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import ThankYouDialog from "./thank-you-dialog";
@@ -13,8 +13,8 @@ import { notFound, useParams } from "next/navigation";
 import type { ExistingSignature } from "@/components/3d/TShirtCanvas";
 import type { SignaturePlacementPayload } from "@/components/3d/TShirtSigningModal";
 import type TShirtSigningModalComponent from "@/components/3d/TShirtSigningModal";
-import FlatShirt from "@/components/3d/FlatShirt";
-import { BOARD_3D_DELAY_MS } from "@/lib/shirt/load-state";
+import DeferredPublicBoard from "@/components/3d/DeferredPublicBoard";
+import { boardSwapAllowed, IDLE_SIGNER, type SignerBusyness } from "@/lib/shirt/board-swap";
 
 const { firestore, auth } = initializeFirebase();
 
@@ -46,16 +46,12 @@ export default function PublicSignOutPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? '';
 
-  // Draw pad opens immediately. The board's 3D shirt waits so it does not
-  // compete with that first download on a slow phone.
+  // Draw pad opens immediately. The board's 3D shirt waits, and it only
+  // fades in once the pad, placement, and name/note fields are idle.
   const [showModal, setShowModal] = useState(false);
   const [thankYouPicture, setThankYouPicture] = useState("");
-  const [BoardView, setBoardView] = useState<React.ComponentType<{
-    existingSignatures?: ExistingSignature[];
-    className?: string;
-  }> | null>(null);
   const [SigningModal, setSigningModal] = useState<typeof TShirtSigningModalComponent | null>(null);
-  const drawOpened = useRef(false);
+  const [signerActivity, setSignerActivity] = useState<SignerBusyness>(IDLE_SIGNER);
 
   useEffect(() => {
     const checkIp = async () => {
@@ -112,7 +108,6 @@ export default function PublicSignOutPage() {
 
   const handleOpenDraw = () => {
     if (hasAlreadySigned || isCheckingIp) return;
-    drawOpened.current = true;
     setShowModal(true);
     void loadChallenge();
     if (!SigningModal) {
@@ -122,17 +117,6 @@ export default function PublicSignOutPage() {
       });
     }
   };
-
-  useEffect(() => {
-    if (showModal) return;
-    const delay = drawOpened.current ? 0 : BOARD_3D_DELAY_MS;
-    const timer = window.setTimeout(() => {
-      void import("@/components/3d/TShirtBoard").then((mod) => {
-        setBoardView(() => mod.default);
-      });
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [showModal]);
 
   const handleSave = async (payload: SignaturePlacementPayload) => {
     if (!firestore || !student) return;
@@ -288,16 +272,10 @@ export default function PublicSignOutPage() {
           <div className="w-full h-full relative z-10 flex items-center justify-center">
             {areSignaturesLoading ? (
               <Loader2 className="animate-spin text-white h-8 w-8" />
-            ) : BoardView ? (
-              <BoardView
-                existingSignatures={existingSignatures}
-                className="w-full h-full object-contain"
-              />
             ) : (
-              <FlatShirt
+              <DeferredPublicBoard
                 existingSignatures={existingSignatures}
-                readOnly
-                className="h-full w-full"
+                idle={boardSwapAllowed(signerActivity)}
               />
             )}
           </div>
@@ -324,7 +302,11 @@ export default function PublicSignOutPage() {
       {showModal && SigningModal && (
         <SigningModal
           open={showModal}
-          onOpenChange={setShowModal}
+          onOpenChange={(open) => {
+            setShowModal(open);
+            if (!open) setSignerActivity(IDLE_SIGNER);
+          }}
+          onSignerActivity={setSignerActivity}
           onSave={handleSave}
           onScreenshot={setThankYouPicture}
           signatoryName={sigName}
