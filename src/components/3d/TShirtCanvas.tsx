@@ -25,9 +25,13 @@ import React, {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { SHIRT_MODEL_URL } from '@/lib/shirt/asset';
+import { readResponseBytes } from '@/lib/shirt/bytes';
 import {
   clearSessionPlacements,
   commitSessionPlacement,
+  overlapsPlacement,
   texturePointFromUv,
   undoSessionPlacement,
   type ShirtPlacement,
@@ -78,6 +82,13 @@ interface TShirtCanvasProps {
   /** Whether clicking is disabled (read-only / gallery mode) */
   readOnly?: boolean;
   className?: string;
+  /** Override the compressed shirt. Defaults to the hashed public GLB. */
+  modelUrl?: string;
+  /** Already-downloaded GLB. When set, the canvas does not fetch again. */
+  modelBuffer?: ArrayBuffer | null;
+  onProgress?: (progress: { loadedBytes: number; totalBytes: number | null }) => void;
+  onReady?: () => void;
+  onModelError?: (message: string) => void;
 }
 
 // ─── Texture dimensions ─────────────────────────────────────────────────────
@@ -97,7 +108,7 @@ const toUvFromPercentPosition = (
 
 // ─── Component ──────────────────────────────────────────────────────────────
 const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
-  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className }, ref) => {
+  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className, modelUrl = SHIRT_MODEL_URL, modelBuffer = null, onProgress, onReady, onModelError }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
 
     // Three.js objects kept in refs so they don't cause re-renders
@@ -125,6 +136,16 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     const loadedUrlsRef = useRef<Set<string>>(new Set());
     // All mesh parts of the shirt (used for full-surface raycasting)
     const shirtMeshesRef = useRef<THREE.Mesh[]>([]);
+    const onProgressRef = useRef(onProgress);
+    const onReadyRef = useRef(onReady);
+    const onErrorRef = useRef(onModelError);
+    const modelUrlRef = useRef(modelUrl);
+    const modelBufferRef = useRef(modelBuffer);
+    onProgressRef.current = onProgress;
+    onReadyRef.current = onReady;
+    onErrorRef.current = onModelError;
+    modelUrlRef.current = modelUrl;
+    modelBufferRef.current = modelBuffer;
 
     // ── Compositing helpers ────────────────────────────────────────────────
     const redrawComposite = useCallback(() => {
@@ -164,6 +185,24 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     useImperativeHandle(ref, () => ({
       addSignature(sigCanvas, uv, size = { width: 280, height: 120 }) {
         const area = texturePointFromUv(uv, TEX_W, TEX_H);
+        // Existing signatures count even before their images have been baked,
+        // so an auto-placed mark cannot land on someone during the fade-in.
+        const existingAreas = (existingSignaturesRef.current ?? []).flatMap((sig) => {
+          const sigUv = toUvFromPercentPosition(sig.position);
+          if (!sigUv) return [];
+          return [{ area: texturePointFromUv(sigUv, TEX_W, TEX_H) }];
+        });
+        let latestSession = -1;
+        for (let i = placedItemsRef.current.length - 1; i >= 0; i--) {
+          if (placedItemsRef.current[i].kind === 'session') {
+            latestSession = i;
+            break;
+          }
+        }
+        const baked = latestSession < 0
+          ? placedItemsRef.current
+          : placedItemsRef.current.filter((_, index) => index !== latestSession);
+        if (overlapsPlacement([...baked, ...existingAreas], area, SIG_RADIUS)) return false;
         const result = commitSessionPlacement(
           placedItemsRef.current,
           { kind: 'session', canvas: sigCanvas, uv, size, area },
@@ -289,7 +328,14 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       cameraRef.current = camera;
 
       // Renderer
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      let renderer: THREE.WebGLRenderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      } catch (error) {
+        console.error('WebGL unavailable', error);
+        onErrorRef.current?.('Could not start the 3D shirt.');
+        return;
+      }
       renderer.setClearColor(0x000000, 0);
       renderer.setSize(w, h);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
@@ -335,14 +381,19 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       ctx.fillRect(0, 0, TEX_W, TEX_H);
       const ct = new THREE.CanvasTexture(cc);
       ct.colorSpace = THREE.SRGBColorSpace;
+      // glTF UVs use the top-left of the image. CanvasTexture flips by default.
+      ct.flipY = false;
       ct.anisotropy = 16;
       compositeTextureRef.current = ct;
 
-      // Load GLTF model
+      // Load the compressed GLB. MeshoptDecoder's WASM is inlined in the
+      // three.js module, so the decoder is served with our JS, not a CDN.
+      const abort = new AbortController();
+      let disposed = false;
       const loader = new GLTFLoader();
-      loader.load(
-        '/model/tshirt.gltf',
-        (gltf) => {
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      const acceptModel = (gltf: { scene: THREE.Group }) => {
+        if (disposed) return;
           const model = gltf.scene;
           modelRef.current = model;
 
@@ -361,8 +412,12 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
             }
           });
 
-          if (!shirtMesh) return;
+          if (!shirtMesh) {
+            onErrorRef.current?.('The shirt model did not include a mesh.');
+            return;
+          }
           shirtMeshRef.current = shirtMesh;
+          onReadyRef.current?.();
 
           // Capture original texture from the primary mesh, then apply composite
           // to ALL mesh parts so the full shirt surface updates correctly.
@@ -456,10 +511,37 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
             }
           };
           requestAnimationFrame(grow);
-        },
-        undefined,
-        (err) => console.error('GLTF load error', err)
-      );
+      };
+
+      void (async () => {
+        try {
+          await MeshoptDecoder.ready;
+          let buffer = modelBufferRef.current;
+          if (!buffer) {
+            const response = await fetch(modelUrlRef.current, { signal: abort.signal });
+            if (!response.ok) throw new Error(`Shirt download failed (${response.status})`);
+            buffer = await readResponseBytes(response, (loadedBytes, totalBytes) => {
+              onProgressRef.current?.({ loadedBytes, totalBytes });
+            });
+          }
+          if (disposed) return;
+          loader.parse(
+            buffer,
+            '',
+            (gltf) => acceptModel(gltf),
+            (err) => {
+              console.error('GLTF load error', err);
+              const message = err instanceof Error ? err.message : 'Could not read the 3D shirt.';
+              onErrorRef.current?.(message);
+            },
+          );
+        } catch (err) {
+          if (disposed || (err instanceof DOMException && err.name === 'AbortError')) return;
+          console.error('GLTF load error', err);
+          const message = err instanceof Error ? err.message : 'Could not load the 3D shirt.';
+          onErrorRef.current?.(message);
+        }
+      })();
 
       // Animation loop
       const animate = () => {
@@ -494,6 +576,8 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       onResize();
 
       return () => {
+        disposed = true;
+        abort.abort();
         window.removeEventListener('resize', onResize);
         cancelAnimationFrame(rafRef.current);
         controls.dispose();

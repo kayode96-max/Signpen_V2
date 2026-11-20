@@ -13,6 +13,8 @@ describe('isLazyFirstViewAsset', () => {
     expect(isLazyFirstViewAsset('http://127.0.0.1:3210/images/vid1.mp4')).toBe(true);
     expect(isLazyFirstViewAsset('http://127.0.0.1:3210/images/vid1.d685294af0.mp4')).toBe(true);
     expect(isLazyFirstViewAsset('http://127.0.0.1:3210/model/scene.bin')).toBe(true);
+    expect(isLazyFirstViewAsset('http://127.0.0.1:3210/model/tshirt.1a9ca00038.glb')).toBe(true);
+    expect(isLazyFirstViewAsset('http://127.0.0.1:3210/model/meshopt_decoder.js')).toBe(true);
     expect(isLazyFirstViewAsset('http://127.0.0.1:3210/_next/static/chunks/three-abc123.js')).toBe(true);
   });
 

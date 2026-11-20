@@ -4,10 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { SIGNATORY_NOTE_MAX } from '@/lib/security/limits';
 import {
+  CHALLENGE_HINT,
+  DETAILS_HINT,
   SHIRT_HINT_DRAW,
   SHIRT_HINT_DRAW_AND_SPOT,
   SHIRT_HINT_SPOT,
   canonicalBoardUrl,
+  decideDetailsContinue,
+  decideDrawContinue,
   decideShirtSubmit,
   graduateFirstName,
   noteCounterLabel,
@@ -54,6 +58,43 @@ describe('shirt submit', () => {
   it('disables Done & Submit only while a save is in flight', () => {
     expect(shirtSubmitDisabled(true)).toBe(true);
     expect(shirtSubmitDisabled(false)).toBe(false);
+  });
+});
+
+describe('draw then name then spot', () => {
+  it('opens the next step only after there is a drawing', () => {
+    expect(decideDrawContinue(false)).toEqual({ action: 'hint', hint: SHIRT_HINT_DRAW });
+    expect(decideDrawContinue(true)).toEqual({ action: 'details' });
+  });
+
+  it('asks for a name and note before auto-placing', () => {
+    expect(decideDetailsContinue({
+      hasDrawing: true,
+      name: '  ',
+      note: 'Congrats',
+      challengeBlocked: false,
+    })).toEqual({ action: 'hint', hint: DETAILS_HINT });
+    expect(decideDetailsContinue({
+      hasDrawing: true,
+      name: 'Ada',
+      note: '  ',
+      challengeBlocked: false,
+    })).toEqual({ action: 'hint', hint: DETAILS_HINT });
+  });
+
+  it('stops for the spam check, then auto-places', () => {
+    expect(decideDetailsContinue({
+      hasDrawing: true,
+      name: 'Ada',
+      note: 'Congrats',
+      challengeBlocked: true,
+    })).toEqual({ action: 'hint', hint: CHALLENGE_HINT });
+    expect(decideDetailsContinue({
+      hasDrawing: true,
+      name: 'Ada',
+      note: 'Congrats',
+      challengeBlocked: false,
+    })).toEqual({ action: 'auto-place' });
   });
 });
 

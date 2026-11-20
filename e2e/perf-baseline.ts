@@ -117,13 +117,17 @@ export function topResources(entries: { url: string; bytes: number }[]): PerfRes
 
 /**
  * Hero video, the 3D model, and three.js chunks. Same matcher as PR #25
- * `isLazyFirstViewAsset`: hashed `vid1.*.mp4`, `scene.bin`, and any pathname
- * containing `three`. Report-only.
+ * `isLazyFirstViewAsset`: hashed `vid1.*.mp4`, the shirt model (`scene.bin`,
+ * `tshirt.gltf`, `tshirt.<hash>.glb`), meshopt/draco/basis decoders, and any
+ * pathname containing `three`. Report-only.
  */
 export function isLazyFirstViewAsset(url: string): boolean {
   const pathname = pathnameOf(url);
   if (/\/vid1(?:\.[^/]+)?\.mp4$/i.test(pathname)) return true;
   if (pathname.endsWith('/scene.bin')) return true;
+  if (pathname.endsWith('/tshirt.gltf')) return true;
+  if (/\/tshirt\.[a-z0-9]+\.glb$/i.test(pathname)) return true;
+  if (pathname.includes('meshopt') || pathname.includes('/draco') || pathname.includes('basis_transcoder')) return true;
   if (pathname.includes('three')) return true;
   return false;
 }

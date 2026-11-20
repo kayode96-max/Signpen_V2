@@ -8,10 +8,14 @@ import { SIGNATORY_NOTE_MAX } from '@/lib/security/limits';
 
 export { SIGNATORY_NOTE_MAX };
 
-export const SHIRT_HINT_DRAW_AND_SPOT = 'Tap the shirt to choose a spot, then draw your signature.';
-export const SHIRT_HINT_DRAW = 'Draw your signature before submitting.';
+export const SHIRT_HINT_DRAW_AND_SPOT = 'Draw your signature, then add your name. We will pick a free spot.';
+export const SHIRT_HINT_DRAW = 'Draw your signature before continuing.';
 export const SHIRT_HINT_SPOT = 'Tap the shirt to choose a spot.';
 export const SHIRT_HINT_SPOT_TAKEN = "Too close to someone else's — tap a free spot.";
+export const DETAILS_HINT = 'Add your name and a note to continue.';
+export const CHALLENGE_HINT = 'Complete the spam check before continuing.';
+export const AUTO_SPOT_HINT = 'We picked a free spot. Tap the shirt or Place on Shirt to move it.';
+export const MOVE_SPOT_HINT = 'Tap the shirt, then Place on Shirt, to move it.';
 
 export type ShirtSubmitInput = {
   hasPlacement: boolean;
@@ -30,6 +34,29 @@ export type ShirtSubmitDecision =
  */
 export function shirtSubmitDisabled(isSaving: boolean): boolean {
   return isSaving;
+}
+
+export function hasSignatoryDetails(name: string, note: string): boolean {
+  return name.trim().length > 0 && note.trim().length > 0;
+}
+
+/** Draw step. An empty pad explains itself; it does not disable the button. */
+export function decideDrawContinue(hasDrawing: boolean): { action: 'details' } | { action: 'hint'; hint: string } {
+  if (!hasDrawing) return { action: 'hint', hint: SHIRT_HINT_DRAW };
+  return { action: 'details' };
+}
+
+/** Name and note come after the drawing, and before the spot is chosen. */
+export function decideDetailsContinue(input: {
+  hasDrawing: boolean;
+  name: string;
+  note: string;
+  challengeBlocked: boolean;
+}): { action: 'auto-place' } | { action: 'hint'; hint: string } {
+  if (!input.hasDrawing) return { action: 'hint', hint: SHIRT_HINT_DRAW };
+  if (input.challengeBlocked) return { action: 'hint', hint: CHALLENGE_HINT };
+  if (!hasSignatoryDetails(input.name, input.note)) return { action: 'hint', hint: DETAILS_HINT };
+  return { action: 'auto-place' };
 }
 
 export function decideShirtSubmit(input: ShirtSubmitInput): ShirtSubmitDecision {

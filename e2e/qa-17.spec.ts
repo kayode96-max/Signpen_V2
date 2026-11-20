@@ -178,20 +178,7 @@ test('6 UI signing on the board', async ({ page }, testInfo) => {
   const opened = await openSigningDialog(page);
   expect(opened.ok, `${project} ${opened.evidence} passThePhone=${phone}`).toBe(true);
   const name = `QA-17-${project.replace(/\s+/g, '')}-${Date.now()}`;
-  const form = page.getByRole('dialog').filter({ hasText: 'Before you sign' });
-  // The visible labels are not wired with htmlFor, so the placeholders are the fields.
-  await form.getByPlaceholder('Jane Doe').fill(name);
-  await form.getByPlaceholder('Wishing you all the best!').fill('preview ui check');
-  const openShirt = page.getByRole('button', { name: /Open T-Shirt|Continue/ });
-  const label = (await openShirt.textContent()) ?? '';
-  if (/Continue/i.test(label)) {
-    const evidence = `${project} Turnstile challenge is required before drawing (${label.trim()})`;
-    console.log(`[qa17] BLOCKED 6 ${evidence}`);
-    test.skip(true, evidence);
-    return;
-  }
-  await openShirt.click();
-  const drawError = await drawAndSubmit(page);
+  const drawError = await drawAndSubmit(page, name);
   const sent = page.getByText(/Your signature has been sent to/i);
   const failedToast = page.getByText(/Submission Failed|We couldn't save your signature/i);
   await Promise.race([
@@ -218,8 +205,8 @@ test('6 UI signing on the board', async ({ page }, testInfo) => {
   const reloadBearer = /^bearer\s+\S{10,}/i.test(reloadAuth);
   await dismissInstructions(page);
   await page.getByRole('button', { name: 'Leave Your Signature' }).click();
-  const already = page.getByText("You've already signed this shirt.");
-  const again = page.getByRole('dialog').filter({ hasText: 'Before you sign' });
+  const already = page.getByText(/already signed/i);
+  const again = page.getByRole('heading', { name: 'Draw Your Signature', exact: true });
   await Promise.race([
     already.waitFor({ state: 'visible', timeout: 10_000 }),
     again.waitFor({ state: 'visible', timeout: 10_000 }),
@@ -352,69 +339,37 @@ async function openSigningDialog(page: Page): Promise<{ ok: boolean; evidence: s
     const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 240);
     return { ok: false, evidence: `click failed ${error instanceof Error ? error.message.split('\n')[0] : 'unknown'} body=${text}` };
   }
-  const dialog = page.getByRole('dialog').filter({ hasText: 'Before you sign' });
-  const appeared = await dialog.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+  const dialog = page.getByRole('heading', { name: 'Draw Your Signature', exact: true });
+  const appeared = await dialog.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false);
   if (appeared) return { ok: true, evidence: '' };
   const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 280);
-  return { ok: false, evidence: `Before you sign dialog did not open. body=${text}` };
+  return { ok: false, evidence: `Draw Your Signature did not open. body=${text}` };
 }
 
-async function drawAndSubmit(page: Page): Promise<string> {
-  const shirt = page.getByRole('dialog').filter({ hasText: 'Sign the T-Shirt' });
-  const opened = await shirt.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false);
-  if (!opened) return 'Sign the T-Shirt dialog did not open';
-  const loading = shirt.getByText('Loading 3D Model');
-  if (await loading.isVisible().catch(() => false)) {
-    await loading.waitFor({ state: 'hidden', timeout: 45_000 }).catch(() => undefined);
-  }
-  const webgl = await page.getByText(/webgl/i).count();
-  if (webgl > 0) return 'WebGL context was not available';
-  const canvas = shirt.locator('canvas').first();
-  if (!(await canvas.isVisible().catch(() => false))) return 'shirt canvas is not visible';
-  const box = await canvas.boundingBox();
-  if (!box || box.width < 20 || box.height < 20) return `shirt canvas box ${box ? `${box.width}x${box.height}` : 'missing'}`;
-  const fractions: Array<[number, number]> = [
-    [0.5, 0.42],
-    [0.5, 0.55],
-    [0.4, 0.48],
-    [0.6, 0.48],
-    [0.5, 0.32],
-  ];
-  const draw = page.getByRole('dialog').filter({ hasText: 'Draw Your Signature' });
-  // A locator click waits for loads the shirt canvas schedules. On a touch
-  // phone, a mouse click is also treated as a drag, so the shirt ignores it.
-  // Dispatch the click at one point so the raycast runs without that drag.
-  const touch = await page.evaluate(() => navigator.maxTouchPoints > 0);
-  for (const [fx, fy] of fractions) {
-    const x = box.x + box.width * fx;
-    const y = box.y + box.height * fy;
-    if (touch) {
-      await page.evaluate(({ x, y }) => {
-        const hit = document.elementFromPoint(x, y);
-        const target = hit?.closest('canvas')?.parentElement ?? hit;
-        if (!target) return;
-        const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window };
-        target.dispatchEvent(new MouseEvent('mousedown', opts));
-        target.dispatchEvent(new MouseEvent('mouseup', opts));
-        target.dispatchEvent(new MouseEvent('click', opts));
-      }, { x, y });
-    } else {
-      await page.mouse.click(x, y);
-    }
-    if (await draw.isVisible().catch(() => false)) break;
-    await page.waitForTimeout(500);
-  }
-  if (!(await draw.isVisible().catch(() => false))) {
-    const spot = await page.getByText('Spot Taken').isVisible().catch(() => false);
-    return spot ? 'shirt clicks hit Spot Taken only' : 'draw dialog did not open after shirt clicks';
-  }
+async function drawAndSubmit(page: Page, name: string): Promise<string> {
+  const draw = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Draw Your Signature', exact: true }) });
+  const opened = await draw.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false);
+  if (!opened) return 'Draw Your Signature dialog did not open';
   await draw.getByRole('button', { name: 'Text' }).click({ force: true, noWaitAfter: true });
-  // The tool button returns before React switches the canvas to text mode.
   const font = await draw.getByText('Font:', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false);
   if (!font) return 'text tool did not become active';
   await draw.locator('canvas').click({ position: { x: 40, y: 40 }, force: true, noWaitAfter: true });
   await page.waitForTimeout(300);
-  await draw.getByRole('button', { name: 'Place on Shirt' }).click({ force: true, noWaitAfter: true });
+  await draw.getByRole('button', { name: 'Next' }).click({ force: true });
+  const details = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Add your name', exact: true }) });
+  const detailsOpen = await details.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+  if (!detailsOpen) return 'name step did not open';
+  await details.getByLabel('Your Name').fill(name);
+  await details.getByLabel('Your Note').fill('preview ui check');
+  const findSpot = details.getByRole('button', { name: 'Find a spot' });
+  const label = (await findSpot.textContent()) ?? '';
+  if (/Continue/i.test(label)) {
+    return `Turnstile challenge is required before placing (${label.trim()})`;
+  }
+  await findSpot.click();
+  const shirt = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Sign the T-Shirt', exact: true }) });
+  const shirtOpen = await shirt.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false);
+  if (!shirtOpen) return 'Sign the T-Shirt step did not open';
   const submit = shirt.getByRole('button', { name: 'Done & Submit' });
   const enabled = await expect(submit)
     .toBeEnabled({ timeout: 10_000 })
