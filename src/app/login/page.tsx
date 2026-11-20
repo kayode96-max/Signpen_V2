@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signOutAnonymousSession, useUser } from "@/supabase";
 import AuthForm from "@/components/auth/auth-form";
@@ -69,7 +69,9 @@ export default function LoginPage() {
             <CardDescription className="text-zinc-400 mt-2">Sign in or create an account to continue.</CardDescription>
           </CardHeader>
           <CardContent>
-            <AuthForm />
+            <Suspense fallback={null}>
+              <AuthForm />
+            </Suspense>
           </CardContent>
         </Card>
       </motion.div>
