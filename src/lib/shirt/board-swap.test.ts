@@ -3,8 +3,10 @@ import {
   BOARD_3D_FADE_MS,
   IDLE_SIGNER,
   boardFadeClass,
+  boardFramesAllowed,
   boardStatus,
   boardSwapAllowed,
+  shouldMountBoardCanvas,
   shouldRevealBoard,
   shouldStartBoardLoad,
   signerBusyness,
@@ -81,6 +83,27 @@ describe('board swap gate', () => {
       activity: { ...busy, typingNameOrNote: true },
     })).toBe(false);
     expect(shouldStartBoardLoad({ phase: 'loading', activity: IDLE_SIGNER })).toBe(false);
+  });
+
+  it('does not render the board 3D while the signing modal is open', () => {
+    const drawing = signerBusyness({
+      modalOpen: true,
+      stage: 'draw',
+      nameFieldFocused: false,
+      noteFieldFocused: false,
+    });
+    const placing = signerBusyness({
+      modalOpen: true,
+      stage: 'shirt',
+      nameFieldFocused: false,
+      noteFieldFocused: false,
+    });
+    expect(boardFramesAllowed(drawing)).toBe(false);
+    expect(boardFramesAllowed(placing)).toBe(false);
+    expect(shouldMountBoardCanvas({ phase: 'loading', revealed: false, activity: drawing })).toBe(false);
+    expect(shouldMountBoardCanvas({ phase: 'ready', revealed: true, activity: placing })).toBe(true);
+    expect(boardFramesAllowed(IDLE_SIGNER)).toBe(true);
+    expect(shouldMountBoardCanvas({ phase: 'loading', revealed: false, activity: IDLE_SIGNER })).toBe(true);
   });
 });
 

@@ -13,7 +13,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -28,7 +27,6 @@ import {
   Loader2,
   Undo2,
   Trash2,
-  Camera,
   Pen,
   Type,
   RotateCcw,
@@ -39,8 +37,9 @@ import TurnstileWidget from '@/components/contact/turnstile-widget';
 import { cn } from '@/lib/utils';
 import { SIGNATORY_NAME_MAX, SIGNATORY_NOTE_MAX } from '@/lib/security/limits';
 import { SHIRT_MODEL_URL } from '@/lib/shirt/asset';
-import { downloadProgressPercent, formatDownloadLabel, readResponseBytes } from '@/lib/shirt/bytes';
-import { initialShirtLoadState, reduceShirtLoad, SHIRT_LOAD_TIMEOUT_MS, SHIRT_UNAVAILABLE_COPY } from '@/lib/shirt/load-state';
+import { formatDownloadLabel, readResponseBytes } from '@/lib/shirt/bytes';
+import { initialShirtLoadState, reduceShirtLoad, SHIRT_LOAD_TIMEOUT_MS } from '@/lib/shirt/load-state';
+import { renderKeepsakeDataUrl } from '@/lib/shirt/keepsake';
 import { shouldMountSigningCanvas } from '@/lib/shirt/place-step';
 import { percentToUv, suggestFreeSpot, uvToPercent, type ShirtPoint } from '@/lib/shirt/spot';
 import { placeShirtWhileOpen, type PlaceShirt } from '@/lib/shirt/place-step';
@@ -54,7 +53,6 @@ import {
   decideDetailsContinue,
   decideDrawContinue,
   decideShirtSubmit,
-  downloadDataUrl,
   noteCounterLabel,
   privateNoteLabel,
   shirtSubmitDisabled,
@@ -205,7 +203,6 @@ export default function TShirtSigningModal({
     setStage('details');
   }, [challengeBlocked, stage]);
   const submitDisabled = shirtSubmitDisabled(isSaving);
-  const percent = downloadProgressPercent(load.loadedBytes, load.totalBytes);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -274,12 +271,7 @@ export default function TShirtSigningModal({
     });
   }, []);
 
-  const currentImage = useCallback(() => {
-    if (signatureRef.current && !signatureRef.current.isEmpty()) {
-      return signatureRef.current.toDataURL();
-    }
-    return draftDataUrl;
-  }, [draftDataUrl]);
+  const currentImage = useCallback(() => draftDataUrl, [draftDataUrl]);
 
   const bakeAt = useCallback(async (
     uv: { x: number; y: number },
@@ -387,7 +379,7 @@ export default function TShirtSigningModal({
       setStage('details');
       return;
     }
-    const liveDrawing = signatureRef.current ? !signatureRef.current.isEmpty() : false;
+    const liveDrawing = Boolean(draftDataUrl) || (signatureRef.current ? !signatureRef.current.isEmpty() : false);
     const decision = decideShirtSubmit({
       hasPlacement: Boolean(pendingPlacement),
       hasDrawing: liveDrawing || Boolean(draftDataUrl),
@@ -414,7 +406,17 @@ export default function TShirtSigningModal({
     setHint('');
     setIsSaving(true);
     try {
-      const picture = shirtRef.current?.getScreenshot() ?? '';
+      const marks = (existingSignatures ?? [])
+        .filter((signature) => signature.signatureImageUrl && signature.position)
+        .map((signature) => ({
+          imageUrl: signature.signatureImageUrl,
+          position: signature.position,
+        }));
+      marks.push({
+        imageUrl: placement.signatureImageUrl,
+        position: placement.position,
+      });
+      const picture = await renderKeepsakeDataUrl({ graduateName, marks });
       if (picture) onScreenshot?.(picture);
       await onSave(placement);
       onOpenChange(false);
@@ -426,12 +428,6 @@ export default function TShirtSigningModal({
   const chooseSpot = (uv: { x: number; y: number }) => {
     setManualUV(uv);
     setHint('Tap Place on Shirt to move your signature here.');
-  };
-
-  const retryShirt = () => {
-    bakedKey.current = '';
-    setModelBuffer(null);
-    setLoad((state) => reduceShirtLoad(state, { type: 'retry' }));
   };
 
   const title = stage === 'draw' ? 'Draw Your Signature' : stage === 'details' ? 'Add your name' : 'Sign the T-Shirt';
@@ -520,7 +516,6 @@ export default function TShirtSigningModal({
               <div
                 data-testid="draw-pad"
                 className="relative h-44 w-full shrink-0 overflow-hidden rounded-2xl border-2 border-white/10 bg-white shadow-inner sm:h-56"
-                onPointerUp={rememberDrawing}
               >
                 <SignatureCanvas
                   ref={signatureRef}
@@ -642,31 +637,6 @@ export default function TShirtSigningModal({
                     onSelect={(position) => chooseSpot(percentToUv(position))}
                     className="min-h-0 flex-1"
                   />
-                  <div className="shrink-0 space-y-2 px-4 pb-4">
-                    {load.phase === 'fallback' ? (
-                      <div className="flex items-center justify-center gap-3">
-                        <p role="status" className="text-left text-sm text-white/80">{SHIRT_UNAVAILABLE_COPY}</p>
-                        <Button type="button" onClick={retryShirt} className="min-h-11 shrink-0 rounded-full bg-white px-6 font-medium text-black hover:bg-gray-200">
-                          Retry
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        <Progress
-                          value={percent ?? 0}
-                          aria-label="3D shirt download"
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={percent ?? undefined}
-                          aria-valuetext={formatDownloadLabel(load.loadedBytes, load.totalBytes)}
-                          className="h-2 bg-white/15"
-                        />
-                        <p role="status" className="text-center text-sm text-white/80">
-                          {formatDownloadLabel(load.loadedBytes, load.totalBytes)}
-                        </p>
-                      </>
-                    )}
-                  </div>
                 </div>
               ) : null}
             </div>
@@ -679,21 +649,6 @@ export default function TShirtSigningModal({
               </Button>
               <Button type="button" size="sm" className={toolbarButtonClass} onClick={() => { shirtRef.current?.clearAll(); setPendingPlacement(null); setPendingUV(null); bakedKey.current = ''; setHint('Cleared.'); }}>
                 <Trash2 className="mr-2 h-4 w-4" /> Clear mine
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className={toolbarButtonClass}
-                onClick={() => {
-                  const url = shirtRef.current?.getScreenshot();
-                  if (!url) {
-                    setHint('Screenshot is ready once the 3D shirt is on screen. You can still submit.');
-                    return;
-                  }
-                  downloadDataUrl(url, `signpen-shirt-${Date.now()}.png`);
-                }}
-              >
-                <Camera className="mr-2 h-4 w-4" /> Screenshot
               </Button>
               <Button type="button" size="sm" className={toolbarButtonClass} onClick={() => { void handlePlaceOnShirt(); }}>
                 Place on Shirt

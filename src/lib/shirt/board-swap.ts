@@ -64,6 +64,26 @@ export function shouldStartBoardLoad(input: {
   return input.phase === 'waiting' && boardSwapAllowed(input.activity);
 }
 
+/** The public 3D canvas may draw a frame only while the signing modal is closed. */
+export function boardFramesAllowed(activity: SignerBusyness): boolean {
+  return boardSwapAllowed(activity);
+}
+
+/**
+ * Mount the canvas once a load has started and the signer is idle.
+ * A shirt that is already visible stays mounted while the modal is open so its
+ * render loop can pause instead of starting a new WebGL context.
+ */
+export function shouldMountBoardCanvas(input: {
+  phase: BoardModelPhase;
+  revealed: boolean;
+  activity: SignerBusyness;
+}): boolean {
+  if (input.phase === 'waiting' || input.phase === 'failed') return false;
+  if (boardFramesAllowed(input.activity)) return true;
+  return input.revealed;
+}
+
 export type BoardStatus = 'none' | 'loading' | 'retry';
 
 /** The line under the flat shirt. Ready-but-held shows nothing; failure replaces loading with Retry. */

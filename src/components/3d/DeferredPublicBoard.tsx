@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { BOARD_3D_DELAY_MS, SHIRT_LOAD_TIMEOUT_MS } from '@/lib/shirt/load-state';
 import {
   boardFadeClass,
+  boardFramesAllowed,
   boardStatus,
+  shouldMountBoardCanvas,
   shouldRevealBoard,
   shouldStartBoardLoad,
   IDLE_SIGNER,
@@ -58,20 +60,25 @@ export default function DeferredPublicBoard({
 
   useEffect(() => {
     if (phase !== 'loading') return;
-    let cancelled = false;
     const timer = window.setTimeout(() => {
       setPhase((current) => (current === 'loading' ? 'failed' : current));
     }, SHIRT_LOAD_TIMEOUT_MS);
-    if (!BoardView) {
-      void import('./TShirtBoard').then((mod) => {
-        if (!cancelled) setBoardView(() => mod.default);
-      });
-    }
+    return () => window.clearTimeout(timer);
+  }, [phase, attempt]);
+
+  const mountCanvas = shouldMountBoardCanvas({ phase, revealed, activity });
+  const framesAllowed = boardFramesAllowed(activity);
+
+  useEffect(() => {
+    if (!mountCanvas || BoardView) return;
+    let cancelled = false;
+    void import('./TShirtBoard').then((mod) => {
+      if (!cancelled) setBoardView(() => mod.default);
+    });
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
     };
-  }, [phase, attempt, BoardView]);
+  }, [mountCanvas, BoardView]);
 
   useEffect(() => {
     if (shouldRevealBoard({ phase, alreadyRevealed: revealed, activity }) && !revealed) {
@@ -86,13 +93,14 @@ export default function DeferredPublicBoard({
       <div className={boardFadeClass(!revealed)} aria-hidden={revealed}>
         <FlatShirt existingSignatures={existingSignatures} readOnly className="h-full w-full" />
       </div>
-      {BoardView && phase !== 'waiting' ? (
+      {mountCanvas && BoardView ? (
         <div className={`${boardFadeClass(revealed)}${revealed ? '' : ' pointer-events-none'}`} aria-hidden={!revealed}>
           <BoardView
             key={attempt}
             existingSignatures={existingSignatures}
             className="h-full w-full"
             intro="none"
+            active={framesAllowed}
             onReady={() => setPhase('ready')}
             onModelError={() => setPhase((current) => (current === 'ready' ? current : 'failed'))}
           />

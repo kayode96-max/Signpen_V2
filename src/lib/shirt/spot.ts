@@ -22,6 +22,9 @@ export const FRONT_PANEL = {
   maxY: 62,
 } as const;
 
+/** Step of the auto-spot search, in position percent. Fine enough to see gaps the footprint misses. */
+export const SPOT_GRID_PERCENT = 2.5;
+
 export type ShirtPoint = { x: number; y: number };
 
 /** Centre of the chest first, then nearby front-panel spots. */
@@ -118,9 +121,16 @@ export function clearancePx(
   return nearest;
 }
 
+function clampToPanel(point: ShirtPoint): ShirtPoint {
+  return {
+    x: round2(Math.min(FRONT_PANEL.maxX, Math.max(FRONT_PANEL.minX, point.x))),
+    y: round2(Math.min(FRONT_PANEL.maxY, Math.max(FRONT_PANEL.minY, point.y))),
+  };
+}
+
 /**
- * A spot on the front. Prefers one that covers at most 20% of any existing
- * signature. If the shirt is full, returns the least crowded candidate.
+ * A spot on the front panel. Picks the lowest overlap.
+ * If every gap is crowded, that is the least crowded candidate.
  * Always returns a point so signing is never blocked.
  */
 export function suggestFreeSpot(
@@ -128,36 +138,41 @@ export function suggestFreeSpot(
   options?: {
     preferred?: readonly ShirtPoint[];
     textureSize?: number;
-    maxOverlap?: number;
   },
 ): ShirtPoint {
   const textureSize = options?.textureSize ?? SHIRT_TEXTURE_SIZE;
-  const maxOverlap = options?.maxOverlap ?? MAX_SIGNATURE_OVERLAP;
   const preferred = options?.preferred ?? PREFERRED_SPOTS;
   const valid = occupied.filter(isPoint);
   const footprint = signatureFootprintPercent(textureSize);
-  const candidates: ShirtPoint[] = preferred.map((spot) => ({ ...spot }));
-  const step = Math.max(footprint.width * (1 - maxOverlap), 4);
-  for (let y = FRONT_PANEL.minY; y <= FRONT_PANEL.maxY; y += step) {
-    for (let x = FRONT_PANEL.minX; x <= FRONT_PANEL.maxX; x += step) {
-      candidates.push({ x: round2(x), y: round2(y) });
+  const candidates: ShirtPoint[] = preferred.map((spot) => clampToPanel(spot));
+  for (const other of valid) {
+    for (const ox of [-1, 0, 1]) {
+      for (const oy of [-1, 0, 1]) {
+        if (ox === 0 && oy === 0) continue;
+        candidates.push(clampToPanel({
+          x: other.x + ox * footprint.width,
+          y: other.y + oy * footprint.height,
+        }));
+      }
     }
   }
-
-  for (const spot of candidates) {
-    if (worstOverlap(spot, valid, footprint) <= maxOverlap) return { ...spot };
+  for (let y = FRONT_PANEL.minY; y <= FRONT_PANEL.maxY + 0.001; y += SPOT_GRID_PERCENT) {
+    for (let x = FRONT_PANEL.minX; x <= FRONT_PANEL.maxX + 0.001; x += SPOT_GRID_PERCENT) {
+      candidates.push(clampToPanel({ x, y }));
+    }
   }
+  candidates.push(clampToPanel({ x: FRONT_PANEL.maxX, y: FRONT_PANEL.maxY }));
 
-  let least = candidates[0] ?? { ...PREFERRED_SPOTS[0] };
-  let leastOverlap = Number.POSITIVE_INFINITY;
+  let best = candidates[0] ?? clampToPanel(PREFERRED_SPOTS[0]);
+  let bestOverlap = Number.POSITIVE_INFINITY;
   for (const spot of candidates) {
     const overlap = worstOverlap(spot, valid, footprint);
-    if (overlap < leastOverlap) {
-      least = spot;
-      leastOverlap = overlap;
+    if (overlap < bestOverlap) {
+      best = spot;
+      bestOverlap = overlap;
     }
   }
-  return { ...least };
+  return { ...best };
 }
 
 /** Map a 0–1 click on the flat shirt's chest onto a stored position. */

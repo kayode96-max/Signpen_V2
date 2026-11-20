@@ -11,6 +11,10 @@ import {
   uvToPercent,
 } from './spot';
 
+function worstOverlap(spot: { x: number; y: number }, occupied: readonly { x: number; y: number }[]): number {
+  return occupied.reduce((worst, other) => Math.max(worst, signatureOverlapRatio(spot, other)), 0);
+}
+
 describe('suggestFreeSpot', () => {
   it('starts at the centre of the chest when the shirt is empty', () => {
     expect(suggestFreeSpot([])).toEqual(PREFERRED_SPOTS[0]);
@@ -45,13 +49,42 @@ describe('suggestFreeSpot', () => {
     const spot = suggestFreeSpot(blocked);
     expect(spot.x).toBeGreaterThanOrEqual(FRONT_PANEL.minX);
     expect(spot.x).toBeLessThanOrEqual(FRONT_PANEL.maxX);
+    expect(spot.y).toBeGreaterThanOrEqual(FRONT_PANEL.minY);
+    expect(spot.y).toBeLessThanOrEqual(FRONT_PANEL.maxY);
     const crowded = signatureOverlapRatio(PREFERRED_SPOTS[0], blocked[0]);
     expect(signatureOverlapRatio(spot, blocked[0])).toBeLessThanOrEqual(Math.max(crowded, 1));
   });
 
   it('ignores signatures that are missing coordinates', () => {
     const occupied = [PREFERRED_SPOTS[0], { x: Number.NaN, y: 10 }];
-    expect(suggestFreeSpot(occupied)).toEqual(PREFERRED_SPOTS[1]);
+    const spot = suggestFreeSpot(occupied);
+    expect(Number.isFinite(spot.x)).toBe(true);
+    expect(spot).not.toEqual(PREFERRED_SPOTS[0]);
+    expect(worstOverlap(spot, [PREFERRED_SPOTS[0]])).toBeLessThanOrEqual(MAX_SIGNATURE_OVERLAP);
+  });
+
+  it('uses a clear gap in a Bola-like layout instead of stacking on the coarse grid', () => {
+    // The first twelve spots the 12.5% grid produced on Bola's shirt.
+    // The panel corner stays nearly clear, and that grid never samples it.
+    const occupied = [
+      { x: 25.35, y: 46.81 },
+      { x: 16.5, y: 40 },
+      { x: 34.5, y: 40 },
+      { x: 16.5, y: 55 },
+      { x: 34.5, y: 55 },
+      { x: 25.35, y: 36 },
+      { x: 12, y: 33 },
+      { x: 37, y: 33 },
+      { x: 12, y: 45.5 },
+      { x: 37, y: 45.5 },
+      { x: 24.5, y: 58 },
+      { x: 12, y: 58 },
+    ];
+    expect(worstOverlap({ x: 40, y: 62 }, occupied)).toBeLessThanOrEqual(0.11);
+    const spot = suggestFreeSpot(occupied);
+    expect(worstOverlap(spot, occupied)).toBeLessThanOrEqual(MAX_SIGNATURE_OVERLAP);
+    expect(spot.x).toBeGreaterThanOrEqual(FRONT_PANEL.minX);
+    expect(spot.x).toBeLessThanOrEqual(FRONT_PANEL.maxX);
   });
 });
 

@@ -95,6 +95,11 @@ interface TShirtCanvasProps {
    * `none` is a crossfade onto the flat shirt, which must start at full size.
    */
   intro?: ShirtIntro;
+  /**
+   * When false, the render loop does not draw. Used while the signing modal
+   * is open so a board behind the pad cannot occupy the GPU.
+   */
+  active?: boolean;
 }
 
 // ─── Texture dimensions ─────────────────────────────────────────────────────
@@ -114,7 +119,7 @@ const toUvFromPercentPosition = (
 
 // ─── Component ──────────────────────────────────────────────────────────────
 const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
-  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className, modelUrl = SHIRT_MODEL_URL, modelBuffer = null, onProgress, onReady, onModelError, intro = 'grow' }, ref) => {
+  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className, modelUrl = SHIRT_MODEL_URL, modelBuffer = null, onProgress, onReady, onModelError, intro = 'grow', active = true }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
 
     // Three.js objects kept in refs so they don't cause re-renders
@@ -148,7 +153,10 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     const modelUrlRef = useRef(modelUrl);
     const modelBufferRef = useRef(modelBuffer);
     const introRef = useRef(intro);
+    const activeRef = useRef(active);
+    const loopRef = useRef<() => void>(() => {});
     introRef.current = intro;
+    activeRef.current = active;
     onProgressRef.current = onProgress;
     onReadyRef.current = onReady;
     onErrorRef.current = onModelError;
@@ -555,13 +563,18 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
         }
       })();
 
-      // Animation loop
-      const animate = () => {
-        rafRef.current = requestAnimationFrame(animate);
+      // Animation loop. A paused board keeps its context and draws nothing.
+      const loop = () => {
+        if (disposed || !activeRef.current) {
+          rafRef.current = 0;
+          return;
+        }
+        rafRef.current = requestAnimationFrame(loop);
         controls.update();
         renderer.render(scene, camera);
       };
-      animate();
+      loopRef.current = loop;
+      loop();
 
       // Resize handler
       const onResize = () => {
@@ -599,6 +612,16 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+      activeRef.current = active;
+      if (!active) {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+        return;
+      }
+      if (rafRef.current === 0) loopRef.current();
+    }, [active]);
 
     // ── Mouse Interaction ───────────────────────────────────────────────
     const currentHoveredUrlRef = useRef<string | null>(null);

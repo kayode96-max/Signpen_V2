@@ -27,6 +27,8 @@ interface TShirtBoardProps {
   onModelError?: (message: string) => void;
   /** `none` when this board crossfades over the flat shirt. Dashboard keeps the grow. */
   intro?: ShirtIntro;
+  /** False while the signing modal is open. The canvas stays mounted but does not draw. */
+  active?: boolean;
 }
 
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
@@ -42,7 +44,7 @@ const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
 });
 
 const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
-  ({ existingSignatures, className, onHoverSignature, onReady, onModelError, intro = 'grow' }, ref) => {
+  ({ existingSignatures, className, onHoverSignature, onReady, onModelError, intro = 'grow', active = true }, ref) => {
     const canvasRef = useRef<TShirtCanvasRef>(null);
 
     useImperativeHandle(ref, () => ({
@@ -61,6 +63,7 @@ const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
         onReady={onReady}
         onModelError={onModelError}
         intro={intro}
+        active={active}
       />
     );
   }
