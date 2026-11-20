@@ -13,6 +13,12 @@ export function shirtIntroScale(intro: ShirtIntro, elapsedMs: number): number {
   return SHIRT_GROW_SCALE * eased;
 }
 
+/** Ignore a hidden or empty box so a later real size can resize the canvas. */
+export function canvasDrawSize(width: number, height: number): { width: number; height: number } | null {
+  if (!(width >= 2) || !(height >= 2)) return null;
+  return { width, height };
+}
+
 /** Grow reports ready only after 1.5s. A crossfade is ready at full size immediately. */
 export function shirtIntroSettled(intro: ShirtIntro, elapsedMs: number): boolean {
   if (intro === 'none') return true;

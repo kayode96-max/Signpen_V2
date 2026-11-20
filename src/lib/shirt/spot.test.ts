@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   FRONT_PANEL,
+  MAX_SIGNATURE_OVERLAP,
   PREFERRED_SPOTS,
-  SIGNATURE_EXCLUSION_PX,
   frontClickToPosition,
-  overlapsSignature,
   percentToUv,
   positionOnFront,
+  signatureOverlapRatio,
   suggestFreeSpot,
   uvToPercent,
 } from './spot';
@@ -20,30 +20,33 @@ describe('suggestFreeSpot', () => {
     expect(local!.x).toBeLessThan(0.7);
   });
 
-  it('skips a spot that is inside the signature exclusion radius', () => {
+  it('skips a spot that covers more than 20% of an existing signature', () => {
     const taken = PREFERRED_SPOTS[0];
     const next = suggestFreeSpot([taken]);
     expect(next).not.toEqual(taken);
-    expect(overlapsSignature(next!, [taken])).toBe(false);
-    expect(overlapsSignature({ x: taken.x + 2, y: taken.y }, [taken])).toBe(true);
+    expect(signatureOverlapRatio(next, taken)).toBeLessThanOrEqual(MAX_SIGNATURE_OVERLAP);
+    expect(signatureOverlapRatio({ x: taken.x + 2, y: taken.y }, taken)).toBeGreaterThan(MAX_SIGNATURE_OVERLAP);
   });
 
-  it('keeps a signature that sits just outside the radius', () => {
+  it('keeps the centre when a neighbour only touches the footprint', () => {
     const centre = PREFERRED_SPOTS[0];
-    // 150px on a 2048 texture is 7.324 percentage points. Step past that.
-    const nearby = { x: centre.x + (SIGNATURE_EXCLUSION_PX / 2048) * 100 + 0.5, y: centre.y };
-    expect(overlapsSignature(centre, [nearby])).toBe(false);
+    const nearby = { x: centre.x + 16, y: centre.y };
+    expect(signatureOverlapRatio(centre, nearby)).toBe(0);
     expect(suggestFreeSpot([nearby])).toEqual(centre);
   });
 
-  it('returns null when the front panel is full', () => {
+  it('picks the least crowded spot when the shirt is full and still returns one', () => {
     const blocked = [];
     for (let y = FRONT_PANEL.minY; y <= FRONT_PANEL.maxY; y += 2) {
       for (let x = FRONT_PANEL.minX; x <= FRONT_PANEL.maxX; x += 2) {
         blocked.push({ x, y });
       }
     }
-    expect(suggestFreeSpot(blocked)).toBeNull();
+    const spot = suggestFreeSpot(blocked);
+    expect(spot.x).toBeGreaterThanOrEqual(FRONT_PANEL.minX);
+    expect(spot.x).toBeLessThanOrEqual(FRONT_PANEL.maxX);
+    const crowded = signatureOverlapRatio(PREFERRED_SPOTS[0], blocked[0]);
+    expect(signatureOverlapRatio(spot, blocked[0])).toBeLessThanOrEqual(Math.max(crowded, 1));
   });
 
   it('ignores signatures that are missing coordinates', () => {

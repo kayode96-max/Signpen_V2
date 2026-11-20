@@ -36,14 +36,14 @@ import {
 } from 'lucide-react';
 import SignatureCanvas, { type SignatureCanvasRef } from '@/components/signature/signature-canvas';
 import TurnstileWidget from '@/components/contact/turnstile-widget';
-import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { SIGNATORY_NAME_MAX, SIGNATORY_NOTE_MAX } from '@/lib/security/limits';
 import { SHIRT_MODEL_URL } from '@/lib/shirt/asset';
 import { downloadProgressPercent, formatDownloadLabel, readResponseBytes } from '@/lib/shirt/bytes';
-import { initialShirtLoadState, reduceShirtLoad, SHIRT_LOAD_TIMEOUT_MS } from '@/lib/shirt/load-state';
+import { initialShirtLoadState, reduceShirtLoad, SHIRT_LOAD_TIMEOUT_MS, SHIRT_UNAVAILABLE_COPY } from '@/lib/shirt/load-state';
+import { shouldMountSigningCanvas } from '@/lib/shirt/place-step';
 import { percentToUv, suggestFreeSpot, uvToPercent, type ShirtPoint } from '@/lib/shirt/spot';
-import { placeShirtOnEntry, placeShirtWhileOpen, type PlaceShirt } from '@/lib/shirt/place-step';
+import { placeShirtWhileOpen, type PlaceShirt } from '@/lib/shirt/place-step';
 import {
   AUTO_SPOT_HINT,
   CHALLENGE_HINT,
@@ -166,7 +166,6 @@ export default function TShirtSigningModal({
   const signatureRef = useRef<SignatureCanvasRef>(null);
   const bakedKey = useRef('');
   const gotBytes = useRef(false);
-  const { toast } = useToast();
 
   const [stage, setStage] = useState<Stage>('draw');
   const [placeOpenedAs, setPlaceOpenedAs] = useState<PlaceShirt | null>(null);
@@ -207,9 +206,6 @@ export default function TShirtSigningModal({
   }, [challengeBlocked, stage]);
   const submitDisabled = shirtSubmitDisabled(isSaving);
   const percent = downloadProgressPercent(load.loadedBytes, load.totalBytes);
-  const loadPhaseRef = useRef(load.phase);
-  loadPhaseRef.current = load.phase;
-
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -249,9 +245,9 @@ export default function TShirtSigningModal({
     };
   }, [open, load.attempt]);
 
-  const mountCanvas = Boolean(modelBuffer) && load.phase !== 'fallback';
   const placeView = stage === 'shirt' && placeOpenedAs ? placeShirtWhileOpen(placeOpenedAs) : 'flat';
   const showPlace3d = stage === 'shirt' && placeView === '3d';
+  const mountCanvas = shouldMountSigningCanvas(showPlace3d ? '3d' : 'flat') && Boolean(modelBuffer) && load.phase !== 'fallback';
 
   useEffect(() => {
     if (!mountCanvas || load.phase !== 'loading') return;
@@ -294,26 +290,20 @@ export default function TShirtSigningModal({
       return null;
     }
     const position = uvToPercent(uv);
-    if (shirtRef.current) {
-      const canvas = await dataUrlToCanvas(imageUrl);
-      if (!canvas) {
-        setHint('Unable to read signature image.');
-        return null;
-      }
-      const accepted = shirtRef.current.addSignature(canvas, uv, { width: 320, height: 140 });
-      if (!accepted) {
-        toast({ title: SHIRT_HINT_SPOT_TAKEN });
-        setHint(SHIRT_HINT_SPOT_TAKEN);
-        return null;
-      }
-      bakedKey.current = placementKey(position, imageUrl);
-    }
     const placement = { signatureImageUrl: imageUrl, position };
     setPendingPlacement(placement);
     setPendingUV(uv);
     setManualUV(null);
+    const shirt = shirtRef.current;
+    if (shirt && showPlace3d) {
+      const canvas = await dataUrlToCanvas(imageUrl);
+      if (canvas) {
+        const accepted = shirt.addSignature(canvas, uv, { width: 320, height: 140 });
+        if (accepted) bakedKey.current = placementKey(position, imageUrl);
+      }
+    }
     return placement;
-  }, [dataUrlToCanvas, toast]);
+  }, [dataUrlToCanvas, showPlace3d]);
 
   useEffect(() => {
     if (load.phase !== 'ready' || !pendingPlacement || !shirtRef.current) return;
@@ -362,7 +352,9 @@ export default function TShirtSigningModal({
     }
     const spot = suggestFreeSpot(occupiedSpots(existingSignatures));
     const openPlaceStep = () => {
-      setPlaceOpenedAs(placeShirtOnEntry(loadPhaseRef.current === 'ready'));
+      // Signing never starts WebGL. Parsing the shirt while typing or placing
+      // blocks the next tap, so Place stays on the flat shirt.
+      setPlaceOpenedAs('flat');
       setStage('shirt');
     };
     if (!spot) {
@@ -628,7 +620,7 @@ export default function TShirtSigningModal({
           <div className={stage === 'shirt' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
             <div className="relative min-h-0 flex-1 bg-[#1a1a1a]">
               {mountCanvas ? (
-                <div className={showPlace3d ? 'absolute inset-0 h-full w-full' : 'pointer-events-none fixed -left-[120vw] top-0 h-[480px] w-[360px] overflow-hidden opacity-0'} aria-hidden={!showPlace3d}>
+                <div className="absolute inset-0 h-full w-full">
                   <TShirtCanvas
                     key={load.attempt}
                     ref={shirtRef}
@@ -652,12 +644,12 @@ export default function TShirtSigningModal({
                   />
                   <div className="shrink-0 space-y-2 px-4 pb-4">
                     {load.phase === 'fallback' ? (
-                      <>
-                        <p role="status" className="text-center text-sm text-white/80">{load.error}</p>
-                        <Button type="button" onClick={retryShirt} className="min-h-11 w-full rounded-full bg-white font-medium text-black hover:bg-gray-200">
+                      <div className="flex items-center justify-center gap-3">
+                        <p role="status" className="text-left text-sm text-white/80">{SHIRT_UNAVAILABLE_COPY}</p>
+                        <Button type="button" onClick={retryShirt} className="min-h-11 shrink-0 rounded-full bg-white px-6 font-medium text-black hover:bg-gray-200">
                           Retry
                         </Button>
-                      </>
+                      </div>
                     ) : (
                       <>
                         <Progress

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialShirtLoadState, reduceShirtLoad, SHIRT_LOAD_TIMEOUT_MS } from './load-state';
+import { initialShirtLoadState, reduceShirtLoad, SHIRT_LOAD_TIMEOUT_MS, SHIRT_UNAVAILABLE_COPY } from './load-state';
 
 describe('shirt load state', () => {
   it('keeps a 20 second timeout for Slow 3G', () => {
@@ -23,7 +23,7 @@ describe('shirt load state', () => {
     const loading = reduceShirtLoad(initialShirtLoadState(), { type: 'start' });
     const failed = reduceShirtLoad(loading, { type: 'error', message: 'network down' });
     expect(failed.phase).toBe('fallback');
-    expect(failed.error).toBe('network down');
+    expect(failed.error).toBe(SHIRT_UNAVAILABLE_COPY);
     expect(failed.timedOut).toBe(false);
 
     const slow = reduceShirtLoad(loading, { type: 'timeout' });

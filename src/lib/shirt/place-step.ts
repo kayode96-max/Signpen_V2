@@ -14,3 +14,8 @@ export function placeShirtOnEntry(modelSettled: boolean): PlaceShirt {
 export function placeShirtWhileOpen(openedAs: PlaceShirt): PlaceShirt {
   return openedAs;
 }
+
+/** The WebGL canvas mounts only in the visible 3D place view. */
+export function shouldMountSigningCanvas(placeView: PlaceShirt): boolean {
+  return placeView === '3d';
+}

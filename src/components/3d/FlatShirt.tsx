@@ -6,6 +6,7 @@
  * Chest clicks map into the same position percentages the API stores.
  */
 
+import { cn } from '@/lib/utils';
 import type { ExistingSignature } from './TShirtCanvas';
 import { frontClickToPosition, positionOnFront, type ShirtPoint } from '@/lib/shirt/spot';
 
@@ -43,8 +44,16 @@ export default function FlatShirt({
   }
 
   return (
-    <div className={className ?? 'relative h-full w-full'}>
-      <svg viewBox="0 0 200 230" className="h-full w-full" role="img" aria-hidden="true">
+    <div className={cn('relative h-full w-full min-h-0', className)} style={{ containerType: 'size' }}>
+      <div
+        className="absolute left-1/2 top-1/2"
+        style={{
+          width: 'min(100cqw, calc(100cqh * 200 / 230))',
+          height: 'min(100cqh, calc(100cqw * 230 / 200))',
+          transform: 'translate(-50%, -50%)',
+        }}
+      >
+      <svg viewBox="0 0 200 230" className="block h-full w-full" preserveAspectRatio="none" role="img" aria-hidden="true">
         <path
           d="M62 46 L28 62 L14 92 L38 108 L48 90 L48 200 L152 200 L152 90 L162 108 L186 92 L172 62 L138 46 C128 62 112 70 100 70 C88 70 72 62 62 46 Z"
           fill="#f7f4ee"
@@ -91,6 +100,7 @@ export default function FlatShirt({
             }}
           />
         )}
+      </div>
       </div>
     </div>
   );

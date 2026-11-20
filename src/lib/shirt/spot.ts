@@ -9,6 +9,10 @@
 
 export const SHIRT_TEXTURE_SIZE = 2048;
 export const SIGNATURE_EXCLUSION_PX = 150;
+/** The mark baked onto the shirt. Spacing uses this footprint, not a fixed radius. */
+export const SIGNATURE_FOOTPRINT_PX = { width: 320, height: 140 };
+/** A new auto spot may cover at most this fraction of an existing signature's area. */
+export const MAX_SIGNATURE_OVERLAP = 0.2;
 
 /** Camera-facing torso, in stored position percentages. */
 export const FRONT_PANEL = {
@@ -57,6 +61,38 @@ export function placementDistancePx(
   return Math.hypot(dx, dy);
 }
 
+export function signatureFootprintPercent(textureSize = SHIRT_TEXTURE_SIZE): { width: number; height: number } {
+  return {
+    width: (SIGNATURE_FOOTPRINT_PX.width / textureSize) * 100,
+    height: (SIGNATURE_FOOTPRINT_PX.height / textureSize) * 100,
+  };
+}
+
+/** Share of one signature's area covered by the other, 0 when they only touch. */
+export function signatureOverlapRatio(
+  a: ShirtPoint,
+  b: ShirtPoint,
+  footprint = signatureFootprintPercent(),
+): number {
+  const area = footprint.width * footprint.height;
+  if (!(area > 0)) return 0;
+  const overlapWidth = Math.max(0, footprint.width - Math.abs(a.x - b.x));
+  const overlapHeight = Math.max(0, footprint.height - Math.abs(a.y - b.y));
+  return (overlapWidth * overlapHeight) / area;
+}
+
+function worstOverlap(
+  spot: ShirtPoint,
+  occupied: readonly ShirtPoint[],
+  footprint: { width: number; height: number },
+): number {
+  let worst = 0;
+  for (const other of occupied) {
+    worst = Math.max(worst, signatureOverlapRatio(spot, other, footprint));
+  }
+  return worst;
+}
+
 export function overlapsSignature(
   point: ShirtPoint,
   occupied: readonly ShirtPoint[],
@@ -83,40 +119,45 @@ export function clearancePx(
 }
 
 /**
- * A free spot on the front, or null when every candidate is too close to
- * a signature that is already there. Callers then ask the signer to tap.
+ * A spot on the front. Prefers one that covers at most 20% of any existing
+ * signature. If the shirt is full, returns the least crowded candidate.
+ * Always returns a point so signing is never blocked.
  */
 export function suggestFreeSpot(
   occupied: readonly ShirtPoint[],
   options?: {
     preferred?: readonly ShirtPoint[];
-    radiusPx?: number;
     textureSize?: number;
+    maxOverlap?: number;
   },
-): ShirtPoint | null {
-  const radius = options?.radiusPx ?? SIGNATURE_EXCLUSION_PX;
+): ShirtPoint {
   const textureSize = options?.textureSize ?? SHIRT_TEXTURE_SIZE;
+  const maxOverlap = options?.maxOverlap ?? MAX_SIGNATURE_OVERLAP;
   const preferred = options?.preferred ?? PREFERRED_SPOTS;
   const valid = occupied.filter(isPoint);
-
-  for (const spot of preferred) {
-    if (!overlapsSignature(spot, valid, radius, textureSize)) return { ...spot };
-  }
-
-  let best: ShirtPoint | null = null;
-  let bestClearance = -1;
-  const step = 4;
+  const footprint = signatureFootprintPercent(textureSize);
+  const candidates: ShirtPoint[] = preferred.map((spot) => ({ ...spot }));
+  const step = Math.max(footprint.width * (1 - maxOverlap), 4);
   for (let y = FRONT_PANEL.minY; y <= FRONT_PANEL.maxY; y += step) {
     for (let x = FRONT_PANEL.minX; x <= FRONT_PANEL.maxX; x += step) {
-      const spot = { x: round2(x), y: round2(y) };
-      const room = clearancePx(spot, valid, textureSize);
-      if (room >= radius && room > bestClearance) {
-        best = spot;
-        bestClearance = room;
-      }
+      candidates.push({ x: round2(x), y: round2(y) });
     }
   }
-  return best;
+
+  for (const spot of candidates) {
+    if (worstOverlap(spot, valid, footprint) <= maxOverlap) return { ...spot };
+  }
+
+  let least = candidates[0] ?? { ...PREFERRED_SPOTS[0] };
+  let leastOverlap = Number.POSITIVE_INFINITY;
+  for (const spot of candidates) {
+    const overlap = worstOverlap(spot, valid, footprint);
+    if (overlap < leastOverlap) {
+      least = spot;
+      leastOverlap = overlap;
+    }
+  }
+  return { ...least };
 }
 
 /** Map a 0–1 click on the flat shirt's chest onto a stored position. */

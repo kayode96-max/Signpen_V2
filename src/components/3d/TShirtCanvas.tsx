@@ -27,7 +27,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { SHIRT_MODEL_URL } from '@/lib/shirt/asset';
-import { shirtIntroScale, shirtIntroSettled, type ShirtIntro } from '@/lib/shirt/intro';
+import { canvasDrawSize, shirtIntroScale, shirtIntroSettled, type ShirtIntro } from '@/lib/shirt/intro';
 import { readResponseBytes } from '@/lib/shirt/bytes';
 import {
   clearSessionPlacements,
@@ -566,30 +566,31 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
       // Resize handler
       const onResize = () => {
         if (!container) return;
-        const nw = container.clientWidth;
-        const nh = container.clientHeight;
-        const aspect = nw / nh;
+        const size = canvasDrawSize(container.clientWidth, container.clientHeight);
+        if (!size) return;
+        const aspect = size.width / size.height;
         camera.aspect = aspect;
 
         // Dynamically scale the camera so the shirt fills the screen optimally.
         // If the screen is narrower than the shirt (aspect < 0.75), zoom out to fit the width.
         // If the screen is wider, cap the zoom at 1 so the height doesn't get chopped off.
         camera.zoom = Math.min(1, aspect / 0.75);
-        
+
         camera.updateProjectionMatrix();
 
         // Update pixel ratio on every resize to perfectly catch browser zooming (Ctrl +)
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
-        renderer.setSize(nw, nh);
+        renderer.setSize(size.width, size.height);
       };
       window.addEventListener('resize', onResize);
-      
-      // Call once initially
+      const resizeObserver = new ResizeObserver(() => onResize());
+      resizeObserver.observe(container);
       onResize();
 
       return () => {
         disposed = true;
         abort.abort();
+        resizeObserver.disconnect();
         window.removeEventListener('resize', onResize);
         cancelAnimationFrame(rafRef.current);
         controls.dispose();

@@ -5,6 +5,10 @@
 
 export const SHIRT_LOAD_TIMEOUT_MS = 20_000;
 
+/** Shown instead of a raw fetch or parser error. */
+export const SHIRT_UNAVAILABLE_COPY =
+  "3D shirt didn't load. You can still place your signature on this shirt.";
+
 /** Board 3D waits so the first Slow 3G seconds go to the draw pad. */
 export const BOARD_3D_DELAY_MS = 25_000;
 
@@ -75,7 +79,7 @@ export function reduceShirtLoad(state: ShirtLoadState, event: ShirtLoadEvent): S
       return {
         ...state,
         phase: 'fallback',
-        error: event.message.trim() || 'Could not load the 3D shirt.',
+        error: SHIRT_UNAVAILABLE_COPY,
       };
     case 'timeout':
       if (state.phase !== 'loading') return state;
@@ -83,7 +87,7 @@ export function reduceShirtLoad(state: ShirtLoadState, event: ShirtLoadEvent): S
         ...state,
         phase: 'fallback',
         timedOut: true,
-        error: 'The 3D shirt is taking too long. You can still sign on the flat shirt.',
+        error: SHIRT_UNAVAILABLE_COPY,
       };
     default:
       return state;

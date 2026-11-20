@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SHIRT_GROW_MS, SHIRT_GROW_SCALE, shirtIntroScale, shirtIntroSettled } from './intro';
+import { SHIRT_GROW_MS, SHIRT_GROW_SCALE, canvasDrawSize, shirtIntroScale, shirtIntroSettled } from './intro';
 
 describe('shirt intro', () => {
   it('skips the grow for a crossfade so the shirt is full size immediately', () => {
@@ -14,5 +14,11 @@ describe('shirt intro', () => {
     expect(shirtIntroSettled('grow', SHIRT_GROW_MS - 1)).toBe(false);
     expect(shirtIntroScale('grow', SHIRT_GROW_MS)).toBe(SHIRT_GROW_SCALE);
     expect(shirtIntroSettled('grow', SHIRT_GROW_MS)).toBe(true);
+  });
+
+  it('ignores a hidden canvas and accepts a real container size', () => {
+    expect(canvasDrawSize(0, 0)).toBeNull();
+    expect(canvasDrawSize(1, 400)).toBeNull();
+    expect(canvasDrawSize(360, 480)).toEqual({ width: 360, height: 480 });
   });
 });
