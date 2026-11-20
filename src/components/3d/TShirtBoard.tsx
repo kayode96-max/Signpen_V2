@@ -12,6 +12,7 @@
 import React, { forwardRef, useImperativeHandle, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Loader2 } from 'lucide-react';
+import type { ShirtIntro } from '@/lib/shirt/intro';
 import type { TShirtCanvasRef, ExistingSignature } from './TShirtCanvas';
 
 export interface TShirtBoardRef {
@@ -24,6 +25,8 @@ interface TShirtBoardProps {
   onHoverSignature?: (sig: ExistingSignature | null, x: number, y: number) => void;
   onReady?: () => void;
   onModelError?: (message: string) => void;
+  /** `none` when this board crossfades over the flat shirt. Dashboard keeps the grow. */
+  intro?: ShirtIntro;
 }
 
 const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
@@ -39,7 +42,7 @@ const TShirtCanvas = dynamic(() => import('./TShirtCanvas'), {
 });
 
 const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
-  ({ existingSignatures, className, onHoverSignature, onReady, onModelError }, ref) => {
+  ({ existingSignatures, className, onHoverSignature, onReady, onModelError, intro = 'grow' }, ref) => {
     const canvasRef = useRef<TShirtCanvasRef>(null);
 
     useImperativeHandle(ref, () => ({
@@ -57,6 +60,7 @@ const TShirtBoard = forwardRef<TShirtBoardRef, TShirtBoardProps>(
         onHoverSignature={onHoverSignature}
         onReady={onReady}
         onModelError={onModelError}
+        intro={intro}
       />
     );
   }

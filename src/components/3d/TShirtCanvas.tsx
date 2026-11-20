@@ -27,6 +27,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { SHIRT_MODEL_URL } from '@/lib/shirt/asset';
+import { shirtIntroScale, shirtIntroSettled, type ShirtIntro } from '@/lib/shirt/intro';
 import { readResponseBytes } from '@/lib/shirt/bytes';
 import {
   clearSessionPlacements,
@@ -89,6 +90,11 @@ interface TShirtCanvasProps {
   onProgress?: (progress: { loadedBytes: number; totalBytes: number | null }) => void;
   onReady?: () => void;
   onModelError?: (message: string) => void;
+  /**
+   * `grow` is the dashboard and first appearance (1.5s).
+   * `none` is a crossfade onto the flat shirt, which must start at full size.
+   */
+  intro?: ShirtIntro;
 }
 
 // ─── Texture dimensions ─────────────────────────────────────────────────────
@@ -108,7 +114,7 @@ const toUvFromPercentPosition = (
 
 // ─── Component ──────────────────────────────────────────────────────────────
 const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
-  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className, modelUrl = SHIRT_MODEL_URL, modelBuffer = null, onProgress, onReady, onModelError }, ref) => {
+  ({ onShirtClick, onExistingSignatureClick, onHoverSignature, existingSignatures, readOnly = false, className, modelUrl = SHIRT_MODEL_URL, modelBuffer = null, onProgress, onReady, onModelError, intro = 'grow' }, ref) => {
     const mountRef = useRef<HTMLDivElement>(null);
 
     // Three.js objects kept in refs so they don't cause re-renders
@@ -141,6 +147,8 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
     const onErrorRef = useRef(onModelError);
     const modelUrlRef = useRef(modelUrl);
     const modelBufferRef = useRef(modelBuffer);
+    const introRef = useRef(intro);
+    introRef.current = intro;
     onProgressRef.current = onProgress;
     onReadyRef.current = onReady;
     onErrorRef.current = onModelError;
@@ -417,7 +425,6 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
             return;
           }
           shirtMeshRef.current = shirtMesh;
-          onReadyRef.current?.();
 
           // Capture original texture from the primary mesh, then apply composite
           // to ALL mesh parts so the full shirt surface updates correctly.
@@ -455,62 +462,67 @@ const TShirtCanvas = forwardRef<TShirtCanvasRef, TShirtCanvasProps>(
           const pivot = new THREE.Group();
           pivot.add(model);
           
-          // Initial states for animation
           pivot.scale.setScalar(0);
           scene.add(pivot);
 
           // Adjust orbit controls to rotate exactly around this new center
           controls.target.set(0, 0, 0);
 
-          // Grow animation
-          const start = Date.now();
-          const dur = 1500;
-          const grow = () => {
-            const t = Math.min((Date.now() - start) / dur, 1);
-            const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-            pivot.scale.setScalar(2.5 * e);
-            if (t < 1) requestAnimationFrame(grow);
-            else {
-              isLoadedRef.current = true;
-              // Bake any existing signatures that arrived before the model was ready
-              const sigs = existingSignaturesRef.current;
-              if (sigs && sigs.length > 0) {
-                const bakeInitial = async () => {
-                  for (const sig of sigs) {
-                    if (!sig?.signatureImageUrl) continue;
-                    if (loadedUrlsRef.current.has(sig.signatureImageUrl)) continue;
-                    const uv = toUvFromPercentPosition(sig.position);
-                    if (!uv) continue;
-                    loadedUrlsRef.current.add(sig.signatureImageUrl);
-                    await new Promise<void>((resolve) => {
-                      const img = new Image();
-                      img.crossOrigin = 'anonymous';
-                      img.onload = () => {
-                        const offscreen = document.createElement('canvas');
-                        offscreen.width = img.naturalWidth;
-                        offscreen.height = img.naturalHeight;
-                        const ctx = offscreen.getContext('2d')!;
-                        ctx.drawImage(img, 0, 0);
-                        placedItemsRef.current.push({
-                          kind: 'existing',
-                          canvas: offscreen,
-                          uv,
-                          size: { width: 340, height: 140 },
-                          area: texturePointFromUv(uv, TEX_W, TEX_H),
-                        });
-                        redrawComposite();
-                        resolve();
-                      };
-                      img.onerror = () => resolve();
-                      img.src = sig.signatureImageUrl;
-                    });
-                  }
-                };
-                bakeInitial();
-              }
+          const settleIntro = () => {
+            if (disposed) return;
+            pivot.scale.setScalar(shirtIntroScale('none', 0));
+            isLoadedRef.current = true;
+            const sigs = existingSignaturesRef.current;
+            if (sigs && sigs.length > 0) {
+              const bakeInitial = async () => {
+                for (const sig of sigs) {
+                  if (!sig?.signatureImageUrl) continue;
+                  if (loadedUrlsRef.current.has(sig.signatureImageUrl)) continue;
+                  const uv = toUvFromPercentPosition(sig.position);
+                  if (!uv) continue;
+                  loadedUrlsRef.current.add(sig.signatureImageUrl);
+                  await new Promise<void>((resolve) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                      const offscreen = document.createElement('canvas');
+                      offscreen.width = img.naturalWidth;
+                      offscreen.height = img.naturalHeight;
+                      const ctx = offscreen.getContext('2d')!;
+                      ctx.drawImage(img, 0, 0);
+                      placedItemsRef.current.push({
+                        kind: 'existing',
+                        canvas: offscreen,
+                        uv,
+                        size: { width: 340, height: 140 },
+                        area: texturePointFromUv(uv, TEX_W, TEX_H),
+                      });
+                      redrawComposite();
+                      resolve();
+                    };
+                    img.onerror = () => resolve();
+                    img.src = sig.signatureImageUrl;
+                  });
+                }
+              };
+              void bakeInitial();
             }
+            onReadyRef.current?.();
           };
-          requestAnimationFrame(grow);
+
+          if (introRef.current === 'none') {
+            settleIntro();
+          } else {
+            const start = Date.now();
+            const grow = () => {
+              if (disposed) return;
+              const elapsed = Date.now() - start;
+              pivot.scale.setScalar(shirtIntroScale('grow', elapsed));
+              if (!shirtIntroSettled('grow', elapsed)) requestAnimationFrame(grow);
+              else settleIntro();
+            };
+            requestAnimationFrame(grow);
+          }
       };
 
       void (async () => {

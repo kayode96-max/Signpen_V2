@@ -92,6 +92,7 @@ export default function DeferredPublicBoard({
             key={attempt}
             existingSignatures={existingSignatures}
             className="h-full w-full"
+            intro="none"
             onReady={() => setPhase('ready')}
             onModelError={() => setPhase((current) => (current === 'ready' ? current : 'failed'))}
           />

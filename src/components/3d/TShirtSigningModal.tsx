@@ -43,6 +43,7 @@ import { SHIRT_MODEL_URL } from '@/lib/shirt/asset';
 import { downloadProgressPercent, formatDownloadLabel, readResponseBytes } from '@/lib/shirt/bytes';
 import { initialShirtLoadState, reduceShirtLoad, SHIRT_LOAD_TIMEOUT_MS } from '@/lib/shirt/load-state';
 import { percentToUv, suggestFreeSpot, uvToPercent, type ShirtPoint } from '@/lib/shirt/spot';
+import { placeShirtOnEntry, placeShirtWhileOpen, type PlaceShirt } from '@/lib/shirt/place-step';
 import {
   AUTO_SPOT_HINT,
   CHALLENGE_HINT,
@@ -168,6 +169,7 @@ export default function TShirtSigningModal({
   const { toast } = useToast();
 
   const [stage, setStage] = useState<Stage>('draw');
+  const [placeOpenedAs, setPlaceOpenedAs] = useState<PlaceShirt | null>(null);
   const [nameFieldFocused, setNameFieldFocused] = useState(false);
   const [noteFieldFocused, setNoteFieldFocused] = useState(false);
   const onSignerActivityRef = useRef(onSignerActivity);
@@ -205,6 +207,8 @@ export default function TShirtSigningModal({
   }, [challengeBlocked, stage]);
   const submitDisabled = shirtSubmitDisabled(isSaving);
   const percent = downloadProgressPercent(load.loadedBytes, load.totalBytes);
+  const loadPhaseRef = useRef(load.phase);
+  loadPhaseRef.current = load.phase;
 
   useEffect(() => {
     if (!open) return;
@@ -245,15 +249,17 @@ export default function TShirtSigningModal({
     };
   }, [open, load.attempt]);
 
-  const showCanvas = stage === 'shirt' && Boolean(modelBuffer) && load.phase !== 'fallback';
+  const mountCanvas = Boolean(modelBuffer) && load.phase !== 'fallback';
+  const placeView = stage === 'shirt' && placeOpenedAs ? placeShirtWhileOpen(placeOpenedAs) : 'flat';
+  const showPlace3d = stage === 'shirt' && placeView === '3d';
 
   useEffect(() => {
-    if (!showCanvas || load.phase !== 'loading') return;
+    if (!mountCanvas || load.phase !== 'loading') return;
     const timer = window.setTimeout(() => {
       setLoad((state) => reduceShirtLoad(state, { type: 'timeout' }));
     }, SHIRT_LOAD_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
-  }, [showCanvas, load.phase, load.attempt]);
+  }, [mountCanvas, load.phase, load.attempt]);
 
   const dataUrlToCanvas = useCallback((dataUrl: string) => {
     return new Promise<HTMLCanvasElement | null>((resolve) => {
@@ -355,13 +361,17 @@ export default function TShirtSigningModal({
       return;
     }
     const spot = suggestFreeSpot(occupiedSpots(existingSignatures));
+    const openPlaceStep = () => {
+      setPlaceOpenedAs(placeShirtOnEntry(loadPhaseRef.current === 'ready'));
+      setStage('shirt');
+    };
     if (!spot) {
       setHint(SHIRT_HINT_SPOT_TAKEN);
-      setStage('shirt');
+      openPlaceStep();
       return;
     }
     const placement = await bakeAt(percentToUv(spot), imageUrl);
-    setStage('shirt');
+    openPlaceStep();
     if (placement) setHint(AUTO_SPOT_HINT);
   };
 
@@ -532,7 +542,7 @@ export default function TShirtSigningModal({
 
               <p role="status" className="text-center text-xs text-white/60">
                 {load.phase === 'loading'
-                  ? (modelBuffer ? 'Shirt downloaded. It will open when you place your signature.' : formatDownloadLabel(load.loadedBytes, load.totalBytes))
+                  ? formatDownloadLabel(load.loadedBytes, load.totalBytes)
                   : load.phase === 'fallback'
                     ? '3D shirt unavailable. You can still draw and place it on the flat shirt.'
                     : 'The shirt is ready when you are.'}
@@ -605,7 +615,7 @@ export default function TShirtSigningModal({
             <div className="flex shrink-0 flex-col gap-2 border-t border-white/10 px-4 pb-4 pt-3">
               {hint ? <p id="details-continue-hint" role="status" className="break-words text-center text-sm text-white/80">{hint}</p> : null}
               <div className="grid grid-cols-2 gap-2">
-                <Button type="button" variant="ghost" onClick={() => { setHint(''); setStage('draw'); }} className="min-h-11 rounded-full text-white hover:bg-white/10 hover:text-white">
+                <Button type="button" variant="ghost" onClick={() => { setHint(''); setPlaceOpenedAs(null); setStage('draw'); }} className="min-h-11 rounded-full text-white hover:bg-white/10 hover:text-white">
                   Back
                 </Button>
                 <Button type="button" onClick={() => { void handleFindSpot(); }} aria-describedby={hint ? 'details-continue-hint' : undefined} className="min-h-11 rounded-full bg-white font-medium text-black hover:bg-gray-200">
@@ -617,20 +627,22 @@ export default function TShirtSigningModal({
 
           <div className={stage === 'shirt' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
             <div className="relative min-h-0 flex-1 bg-[#1a1a1a]">
-              {showCanvas ? (
-                <TShirtCanvas
-                  key={load.attempt}
-                  ref={shirtRef}
-                  modelBuffer={modelBuffer}
-                  onShirtClick={chooseSpot}
-                  onExistingSignatureClick={() => setShowSpotTakenError(true)}
-                  existingSignatures={existingSignatures}
-                  onReady={() => setLoad((state) => reduceShirtLoad(state, { type: 'ready' }))}
-                  onModelError={(message) => setLoad((state) => reduceShirtLoad(state, { type: 'error', message }))}
-                  className="h-full w-full"
-                />
+              {mountCanvas ? (
+                <div className={showPlace3d ? 'absolute inset-0 h-full w-full' : 'pointer-events-none fixed -left-[120vw] top-0 h-[480px] w-[360px] overflow-hidden opacity-0'} aria-hidden={!showPlace3d}>
+                  <TShirtCanvas
+                    key={load.attempt}
+                    ref={shirtRef}
+                    modelBuffer={modelBuffer}
+                    onShirtClick={chooseSpot}
+                    onExistingSignatureClick={() => setShowSpotTakenError(true)}
+                    existingSignatures={existingSignatures}
+                    onReady={() => setLoad((state) => reduceShirtLoad(state, { type: 'ready' }))}
+                    onModelError={(message) => setLoad((state) => reduceShirtLoad(state, { type: 'error', message }))}
+                    className="h-full w-full"
+                  />
+                </div>
               ) : null}
-              {load.phase !== 'ready' ? (
+              {stage === 'shirt' && !showPlace3d ? (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#1a1a1a]">
                   <FlatShirt
                     existingSignatures={existingSignatures}
